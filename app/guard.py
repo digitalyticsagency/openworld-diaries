@@ -1,0 +1,85 @@
+"""Deterministic guardrails. Code enforces the rules even if the model slips.
+
+Pure functions, no network. See tests/test_guard.py.
+"""
+from .config import MAX_WORDS, MIN_GAP, SPEECH_BUFFER, WORDS_PER_SEC
+
+STRONG_EMOTIONS = {"pain", "joy", "fear", "grief", "relief", "pride", "disgust"}
+EVENT_WINDOW = 4.0  # seconds a scene event may sit away from trigger_t
+
+
+def speech_windows(segments, buffer=SPEECH_BUFFER):
+    """Merge speech segments into locked (start, end) windows with a safety buffer."""
+    spans = sorted((max(0.0, s["start"] - buffer), s["end"] + buffer)
+                   for s in segments if s.get("end", 0) > s.get("start", 0))
+    merged = []
+    for a, b in spans:
+        if merged and a <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+        else:
+            merged.append((a, b))
+    return merged
+
+
+def est_duration(text):
+    return len(text.split()) / WORDS_PER_SEC + 0.4
+
+
+def next_lock_start(t, windows):
+    for a, _ in windows:
+        if a > t:
+            return a
+    return float("inf")
+
+
+def in_window(a, b, windows):
+    return any(a < wb and b > wa for wa, wb in windows)
+
+
+def grounded(line, scenes):
+    """Strong emotions need a real interaction event near trigger_t."""
+    if line.get("emotion") not in STRONG_EMOTIONS:
+        return True
+    t = line.get("trigger_t")
+    if t is None:
+        return False
+    return any(abs(s.get("t", -999) - t) <= EVENT_WINDOW and s.get("interactions")
+               for s in scenes)
+
+
+def enforce(lines, windows, scenes, min_gap=MIN_GAP, max_words=MAX_WORDS):
+    """Return (kept, dropped). Dropped entries carry a 'reason'."""
+    kept, dropped = [], []
+    prev_end = -1e9
+    for ln in sorted(lines, key=lambda x: x.get("start", 0)):
+        text = (ln.get("line") or "").strip()
+        start = float(ln.get("start", 0))
+        reason = None
+        if not text:
+            reason = "empty"
+        elif len(text.split()) > max_words:
+            reason = "too long"
+        else:
+            room = next_lock_start(start, windows) - start - 0.3
+            maxd = min(float(ln.get("max_duration") or 1e9), room)
+            end = start + est_duration(text)
+            if in_window(start, end, windows):
+                reason = "overlaps speech"
+            elif maxd < est_duration(text):
+                reason = "no room before speech"
+            elif start < prev_end + min_gap:
+                reason = "too close to previous line"
+            elif not grounded(ln, scenes):
+                reason = "emotion not grounded in an on-screen event"
+            else:
+                ln = {**ln, "line": text, "max_duration": round(maxd, 2)}
+                kept.append(ln)
+                prev_end = end
+                continue
+        dropped.append({**ln, "reason": reason})
+    return kept, dropped
+
+
+def clip_fits(start, duration, windows):
+    """Final check on real TTS audio length."""
+    return not in_window(start, start + duration, windows)

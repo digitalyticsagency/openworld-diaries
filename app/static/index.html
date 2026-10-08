@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open World Diaries</title>
+<style>
+  :root { --bg:#14110f; --card:#1d1815; --ink:#f2e9dc; --mute:#a79a88; --line:#2f2822; --accent:#d9a441; --ok:#6fbf73; --bad:#d65f5f; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f6f0e6; --card:#fffaf1; --ink:#2a231b; --mute:#7a6d5c; --line:#e3d8c5; --accent:#b57a14; --ok:#2f8a3a; --bad:#b83b3b; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 ui-sans-serif,system-ui,sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font:600 22px/1.2 ui-serif,Georgia,serif; margin:0 0 4px; }
+  .sub { color:var(--mute); margin:0 0 24px; }
+  .hero { display:flex; flex-direction:column; align-items:center; gap:12px; padding:32px 16px; background:var(--card); border:1px solid var(--line); border-radius:16px; }
+  #power { width:148px; height:148px; border-radius:50%; border:3px solid var(--line); background:var(--bg); color:var(--mute); font:700 18px ui-sans-serif,system-ui; letter-spacing:.08em; cursor:pointer; transition:.2s; }
+  #power.on { border-color:var(--accent); color:var(--accent); box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 18%,transparent); }
+  #power:focus-visible { outline:3px solid var(--accent); outline-offset:4px; }
+  #msg { min-height:1.4em; color:var(--mute); text-align:center; }
+  #msg.err { color:var(--bad); }
+  section { margin-top:20px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--mute); margin:0 0 12px; }
+  label { display:block; font-size:13px; color:var(--mute); margin:10px 0 4px; }
+  input, select { width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font:inherit; }
+  button.s { padding:9px 14px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font:inherit; cursor:pointer; }
+  button.s:hover { border-color:var(--accent); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .row > * { flex:1 1 160px; }
+  .row > button { flex:0 0 auto; }
+  .vid { padding:12px 0; border-top:1px solid var(--line); }
+  .vid:first-of-type { border-top:0; }
+  .vt { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+  .pill { font-size:12px; padding:2px 8px; border-radius:99px; border:1px solid var(--line); color:var(--mute); }
+  .pill.awaiting_approval { color:var(--accent); border-color:var(--accent); }
+  .pill.published { color:var(--ok); border-color:var(--ok); }
+  .pill.failed { color:var(--bad); border-color:var(--bad); }
+  .ln { display:flex; gap:8px; align-items:flex-start; padding:6px 0; font-size:14px; }
+  .ln span.t { color:var(--mute); min-width:44px; }
+  .ln button { border:0; background:none; cursor:pointer; font-size:16px; opacity:.5; }
+  .ln button.sel { opacity:1; }
+  .small { color:var(--mute); font-size:13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Open World Diaries</h1>
+  <p class="sub">Drop a gameplay video in your Drive folder. The inner voice does the rest.</p>
+
+  <div class="hero">
+    <button id="power" aria-pressed="false">AUTO OFF</button>
+    <div id="msg" role="status"></div>
+  </div>
+
+  <section>
+    <h2>1 · Connect</h2>
+    <div class="row">
+      <button class="s" id="connect">Connect YouTube (Google login)</button>
+      <select id="channel" aria-label="YouTube channel"></select>
+    </div>
+    <label for="folder">Google Drive folder (link or ID)</label>
+    <input id="folder" placeholder="https://drive.google.com/drive/folders/...">
+  </section>
+
+  <section>
+    <h2>2 · Voice</h2>
+    <div class="row">
+      <div><label for="game">Game</label><input id="game"></div>
+      <div><label for="persona">Voice</label>
+        <select id="persona">
+          <option value="mixed">Mixed (all three)</option>
+          <option value="player">Player's own mind</option>
+          <option value="character">In-game character</option>
+          <option value="companion">AI companion</option>
+        </select></div>
+    </div>
+    <div class="row">
+      <div><label for="character">Character</label><input id="character" placeholder="Arthur Morgan"></div>
+      <div><label for="story_point">Story point</label><input id="story_point" placeholder="Chapter 2"></div>
+    </div>
+    <label for="voice_notes">Character voice notes</label>
+    <input id="voice_notes" placeholder="weary outlaw, loyal, ashamed">
+    <p><button class="s" id="save">Save</button></p>
+  </section>
+
+  <section>
+    <h2>3 · Videos <span class="small">(uploaded private; you approve each)</span></h2>
+    <div id="videos" class="small">Nothing yet.</div>
+  </section>
+
+  <section>
+    <h2>4 · Evolution</h2>
+    <div id="prompts" class="small"></div>
+    <p><button class="s" id="evolve">Run evolution cycle now</button></p>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const api = async (path, body) => {
+  const r = await fetch('/api/' + path, body === undefined ? {} :
+    { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || r.statusText);
+  return j;
+};
+const say = (t, err) => { $('msg').textContent = t; $('msg').className = err ? 'err' : ''; };
+const OPEN = new Set();
+let ready = false;
+
+async function load() {
+  const s = await api('state');
+  $('power').className = s.enabled ? 'on' : '';
+  $('power').textContent = s.enabled ? 'AUTO ON' : 'AUTO OFF';
+  $('power').setAttribute('aria-pressed', s.enabled);
+  if (!ready) {
+    ready = true;
+    $('folder').value = s.folder_id;
+    for (const k of ['game','persona','character','story_point','voice_notes']) $(k).value = s.options[k] || '';
+  }
+  $('channel').innerHTML = s.channels.length
+    ? s.channels.map(c => `<option value="${c.id}" ${c.id===s.active_channel?'selected':''}>${esc(c.title)}</option>`).join('')
+    : '<option>No channel connected</option>';
+  $('videos').innerHTML = s.videos.length ? s.videos.map(v => `
+    <div class="vid"><div class="vt"><strong>${esc(v.name)}</strong><span class="pill ${v.status}">${v.status.replace('_',' ')}</span></div>
+    ${v.error ? `<div class="small" style="color:var(--bad)">${esc(v.error)}</div>` : ''}
+    <div class="row" style="margin-top:8px">
+      <button class="s" data-lines="${v.id}">Lines</button>
+      ${v.status==='awaiting_approval' ? `<button class="s" data-approve="${v.id}">Approve &amp; make public</button>` : ''}
+      ${v.status==='failed' ? `<button class="s" data-retry="${v.id}">Retry</button>` : ''}
+      <span class="small">${v.combined_score!=null ? 'score ' + v.combined_score.toFixed(1) : ''}</span>
+    </div><div id="l${v.id}"></div></div>`).join('') : 'Nothing yet.';
+  for (const id of OPEN) showLines(id);
+  $('prompts').innerHTML = s.prompts.map(p =>
+    `v${p.id} · ${p.status} · ${p.n} videos · avg ${p.n ? (p.score_sum/p.n).toFixed(2) : '-'}`).join('<br>');
+}
+const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function showLines(id) {
+  const ls = await api(`videos/${id}/lines`);
+  $('l' + id).innerHTML = ls.map(l => `<div class="ln"><span class="t">${Math.floor(l.start/60)}:${String(Math.floor(l.start%60)).padStart(2,'0')}</span>
+    <span style="flex:1">${esc(l.line)} <span class="small">${l.persona}${l.emotion && l.emotion!=='none' ? ' · ' + l.emotion : ''}</span></span>
+    <button class="${l.thumb===1?'sel':''}" data-thumb="${l.id}:${l.thumb===1?0:1}" aria-label="Good line">👍</button>
+    <button class="${l.thumb===-1?'sel':''}" data-thumb="${l.id}:${l.thumb===-1?0:-1}" aria-label="Bad line">👎</button></div>`).join('') || '<div class="small">No lines.</div>';
+}
+
+$('power').onclick = async () => {
+  try { await api('toggle', { on: !$('power').classList.contains('on') }); say(''); }
+  catch (e) { say(e.message, true); }
+  load();
+};
+$('connect').onclick = async () => {
+  say('Finish the Google login in the browser window that opened...');
+  try { await api('auth/connect', {}); say('Connected.'); } catch (e) { say(e.message, true); }
+  load();
+};
+$('channel').onchange = async () => { await api('channel', { id: $('channel').value }); say('Channel set.'); };
+$('save').onclick = async () => {
+  const b = { folder_id: $('folder').value };
+  for (const k of ['game','persona','character','story_point','voice_notes']) b[k] = $(k).value;
+  await api('settings', b); say('Saved.');
+};
+$('evolve').onclick = async () => { say('Running...'); try { const r = await api('evolve/run', {}); say(`Done: ${JSON.stringify(r)}`); } catch (e) { say(e.message, true); } load(); };
+document.addEventListener('click', async e => {
+  const d = e.target.dataset;
+  try {
+    if (d.lines) { OPEN.has(+d.lines) ? OPEN.delete(+d.lines) : OPEN.add(+d.lines); if (!OPEN.has(+d.lines)) $('l'+d.lines).innerHTML=''; else showLines(+d.lines); }
+    if (d.approve) { await api(`videos/${d.approve}/approve`, {}); say('Published.'); load(); }
+    if (d.retry) { await api(`videos/${d.retry}/retry`, {}); load(); }
+    if (d.thumb) { const [id, v] = d.thumb.split(':'); await api(`lines/${id}/thumb`, { value: +v }); load(); }
+  } catch (err) { say(err.message, true); }
+});
+load(); setInterval(load, 5000);
+</script>
+</body>
+</html>
