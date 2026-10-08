@@ -15,7 +15,7 @@ def claude(system, user, max_tokens=8000):
     r = anthropic.Anthropic().messages.create(
         model=CLAUDE_MODEL, max_tokens=max_tokens, system=system,
         messages=[{"role": "user", "content": user}])
-    return r.content[0].text
+    return "".join(b.text for b in r.content if getattr(b, "type", "") == "text")
 
 
 def gemini_json(parts):
