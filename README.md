@@ -1,6 +1,6 @@
 # Open World Diaries
 
-Drop a gameplay video in a Google Drive folder. An AI inner voice watches it, reads what is said, and speaks only in the quiet moments, feeling the world as you move through it. The finished video is uploaded to your YouTube channel as **private**, and you approve each one.
+Drop a gameplay video in a watch folder (a folder on your Mac or in Google Drive). An AI inner voice watches it, reads what is said, and speaks only in the quiet moments, feeling the world as you move through it. The finished video is uploaded to your YouTube channel as **private**, and you approve each one.
 
 ```
 Drive folder ──► download ──► transcript (who speaks, when) ──► scene + interaction notes (Gemini)
@@ -33,7 +33,7 @@ Each video is scored three ways: an editor pass by Claude (weak lines get one re
 3. Google Cloud console: create a project, enable **Google Drive API**, **YouTube Data API v3** and **YouTube Analytics API**. Create an OAuth client of type *Desktop app*, download it as `client_secret.json` into this folder, and add your Google account as a test user on the consent screen.
 4. Run `.venv/bin/uvicorn app.server:app --port 8000` and open http://localhost:8000.
 5. Click **Connect YouTube**, pick the Google account and channel on the consent screen. Connect again to add another channel, then choose the active one from the dropdown.
-6. Paste the Drive folder link, set the game and voice options, and press the big **AUTO** button.
+6. Set the video folder: either a path on this Mac (the project's `inbox/` folder works) or a Google Drive folder link. Set the game and voice options, then press the big **AUTO** button.
 
 To give the player's words to the AI exactly, put an `.srt` or `.vtt` file with the same name as the video in the same Drive folder. Without one, the audio is transcribed automatically.
 

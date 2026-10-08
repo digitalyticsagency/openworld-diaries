@@ -3,7 +3,7 @@ import shutil
 import traceback
 from pathlib import Path
 
-from . import db, drive, evolve, guard, publisher, scenes, transcript, voice, writer
+from . import db, evolve, guard, publisher, scenes, sources, transcript, voice, writer
 from .config import DATA
 
 
@@ -24,12 +24,13 @@ def process(vid):
     try:
         set_status(vid, "downloading")
         src = work / "source.mp4"
-        drive.download(v["drive_id"], src)
+        folder = db.get("folder_id")
+        sources.fetch(folder, v["drive_id"], src)
         sidecar = None
-        _, subs = drive.videos_and_sidecars(drive.folder_id(db.get("folder_id")))
+        _, subs = sources.list_videos(folder)
         sub = subs.get(Path(v["name"]).stem)
         if sub:
-            sidecar = drive.read_text(sub["id"])
+            sidecar = sources.read_text(folder, sub)
 
         set_status(vid, "listening")
         length = scenes.video_length(src)

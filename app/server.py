@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from . import db, drive, evolve, google_auth, pipeline
+from . import db, evolve, google_auth, pipeline, sources
 from .config import POLL_SECONDS
 
 STATIC = Path(__file__).parent / "static"
@@ -16,10 +16,10 @@ _busy = threading.Lock()
 
 
 def poll_once():
-    fid = drive.folder_id(db.get("folder_id"))
+    fid = db.get("folder_id")
     if not fid or not db.get("active_channel"):
         return
-    vids, _ = drive.videos_and_sidecars(fid)
+    vids, _ = sources.list_videos(fid)
     for f in vids:
         if not db.one("SELECT id FROM videos WHERE drive_id=?", (f["id"],)):
             db.run("INSERT INTO videos(drive_id,name,status,created) VALUES(?,?,?,?)",
@@ -116,7 +116,7 @@ def toggle(t: Toggle):
 @app.post("/api/settings")
 def settings(s: Settings):
     for k, v in s.model_dump(exclude_none=True).items():
-        db.put(k, drive.folder_id(v) if k == "folder_id" else v)
+        db.put(k, sources.normalize(v) if k == "folder_id" else v)
     return {"ok": True}
 
 
