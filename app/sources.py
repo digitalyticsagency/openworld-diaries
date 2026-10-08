@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from . import drive
+from .config import ROOT
 
 VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm", ".m4v"}
 SUB_EXT = {".srt", ".vtt"}
@@ -15,6 +16,16 @@ SETTLE_SECONDS = 10  # ignore files still being copied in
 
 def is_local(value):
     return bool(value) and value.strip()[0] in "/~"
+
+
+def inbox_dir():
+    d = ROOT / "inbox"
+    d.mkdir(exist_ok=True)
+    return d
+
+
+def local_file(file_id):
+    return str(file_id).startswith("/")
 
 
 def normalize(value):
@@ -43,14 +54,14 @@ def list_videos(value):
     return vids, subs
 
 
-def fetch(value, file_id, dest):
-    if is_local(value):
+def fetch(file_id, dest):
+    if local_file(file_id):
         shutil.copyfile(file_id, dest)
     else:
         drive.download(file_id, dest)
 
 
-def read_text(value, file_id):
-    if is_local(value):
+def read_text(file_id):
+    if local_file(file_id):
         return Path(file_id).read_text(encoding="utf-8", errors="replace")
     return drive.read_text(file_id)

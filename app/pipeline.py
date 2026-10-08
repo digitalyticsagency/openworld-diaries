@@ -24,13 +24,14 @@ def process(vid):
     try:
         set_status(vid, "downloading")
         src = work / "source.mp4"
-        folder = db.get("folder_id")
-        sources.fetch(folder, v["drive_id"], src)
+        fid = v["drive_id"]
+        folder = str(Path(fid).parent) if sources.local_file(fid) else db.get("folder_id")
+        sources.fetch(fid, src)
         sidecar = None
         _, subs = sources.list_videos(folder)
         sub = subs.get(Path(v["name"]).stem)
         if sub:
-            sidecar = sources.read_text(folder, sub)
+            sidecar = sources.read_text(sub)
 
         set_status(vid, "listening")
         length = scenes.video_length(src)

@@ -42,9 +42,9 @@ class LocalSourceTests(unittest.TestCase):
         v = self.touch("a.mp4")
         s = self.touch("a.srt")
         dest = self.d / "copy.mp4"
-        sources.fetch(str(self.d), str(v), dest)
+        sources.fetch(str(v), dest)
         self.assertTrue(dest.exists())
-        self.assertEqual(sources.read_text(str(self.d), str(s)), "x")
+        self.assertEqual(sources.read_text(str(s)), "x")
 
     def test_missing_folder_raises(self):
         with self.assertRaises(RuntimeError):

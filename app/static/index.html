@@ -39,6 +39,11 @@
   .ln button { border:0; background:none; cursor:pointer; font-size:16px; opacity:.5; }
   .ln button.sel { opacity:1; }
   .small { color:var(--mute); font-size:13px; }
+  #drop { display:flex; flex-direction:column; gap:4px; align-items:center; text-align:center; padding:28px 16px; border:2px dashed var(--line); border-radius:12px; cursor:pointer; transition:.15s; }
+  #drop:hover, #drop:focus-visible, #drop.over { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 8%,transparent); outline:none; }
+  .up { display:flex; gap:8px; align-items:center; padding-top:8px; font-size:13px; }
+  .up progress { flex:1; height:8px; accent-color:var(--accent); }
+  .up .nm { flex:0 1 40%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -50,6 +55,16 @@
     <button id="power" aria-pressed="false">AUTO OFF</button>
     <div id="msg" role="status"></div>
   </div>
+
+  <section>
+    <h2>Upload from this Mac</h2>
+    <div id="drop" tabindex="0" role="button" aria-label="Choose or drop video files">
+      <strong>Drop a gameplay video here, or click to choose</strong>
+      <span class="small">Add an .srt or .vtt caption file with the same name to give the AI the exact words said. Processing starts when AUTO is on.</span>
+    </div>
+    <input id="file" type="file" accept="video/*,.mkv,.srt,.vtt" multiple hidden>
+    <div id="uploads"></div>
+  </section>
 
   <section>
     <h2>1 · Connect</h2>
@@ -168,6 +183,28 @@ document.addEventListener('click', async e => {
     if (d.thumb) { const [id, v] = d.thumb.split(':'); await api(`lines/${id}/thumb`, { value: +v }); load(); }
   } catch (err) { say(err.message, true); }
 });
+function sendFile(f) {
+  const row = document.createElement('div'); row.className = 'up';
+  row.innerHTML = `<span class="nm">${esc(f.name)}</span><progress max="1" value="0"></progress><span class="st small">0%</span>`;
+  $('uploads').prepend(row);
+  const bar = row.querySelector('progress'), st = row.querySelector('.st');
+  const x = new XMLHttpRequest();
+  x.open('POST', '/api/upload?name=' + encodeURIComponent(f.name));
+  x.upload.onprogress = e => { if (e.lengthComputable) { bar.value = e.loaded / e.total; st.textContent = Math.round(100 * e.loaded / e.total) + '%'; } };
+  x.onload = () => {
+    if (x.status === 200) { bar.value = 1; st.textContent = 'saved'; }
+    else { let m = 'failed'; try { m = JSON.parse(x.responseText).detail; } catch (_) {} st.textContent = m; st.style.color = 'var(--bad)'; }
+  };
+  x.onerror = () => { st.textContent = 'failed'; st.style.color = 'var(--bad)'; };
+  x.send(f);
+}
+const pick = files => { [...files].forEach(sendFile); say('Uploaded files are processed when AUTO is on.'); };
+$('drop').onclick = () => $('file').click();
+$('drop').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file').click(); } };
+$('file').onchange = e => { pick(e.target.files); e.target.value = ''; };
+['dragenter','dragover'].forEach(t => $('drop').addEventListener(t, e => { e.preventDefault(); $('drop').classList.add('over'); }));
+['dragleave','drop'].forEach(t => $('drop').addEventListener(t, e => { e.preventDefault(); $('drop').classList.remove('over'); }));
+$('drop').addEventListener('drop', e => pick(e.dataTransfer.files));
 load(); setInterval(load, 5000);
 </script>
 </body>

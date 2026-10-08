@@ -1,9 +1,10 @@
+import asyncio
 import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -15,15 +16,26 @@ _watcher = {"thread": None}
 _busy = threading.Lock()
 
 
+def watched_folders():
+    """The configured folder plus the local inbox (where uploads land), without duplicates."""
+    inbox = str(sources.inbox_dir())
+    folders = [db.get("folder_id") or inbox, inbox]
+    return list(dict.fromkeys(folders))
+
+
 def poll_once():
-    fid = db.get("folder_id")
-    if not fid or not db.get("active_channel"):
+    if not db.get("active_channel"):
         return
-    vids, _ = sources.list_videos(fid)
-    for f in vids:
-        if not db.one("SELECT id FROM videos WHERE drive_id=?", (f["id"],)):
-            db.run("INSERT INTO videos(drive_id,name,status,created) VALUES(?,?,?,?)",
-                   (f["id"], f["name"], "queued", time.time()))
+    for folder in watched_folders():
+        try:
+            vids, _ = sources.list_videos(folder)
+        except Exception as e:
+            print("cannot read folder", folder, e)
+            continue
+        for f in vids:
+            if not db.one("SELECT id FROM videos WHERE drive_id=?", (f["id"],)):
+                db.run("INSERT INTO videos(drive_id,name,status,created) VALUES(?,?,?,?)",
+                       (f["id"], f["name"], "queued", time.time()))
     for v in db.rows("SELECT id FROM videos WHERE status='queued' ORDER BY id"):
         if db.get("enabled") != "1":
             return
@@ -93,7 +105,7 @@ def index():
 def state():
     return {
         "enabled": db.get("enabled") == "1",
-        "folder_id": db.get("folder_id", ""),
+        "folder_id": db.get("folder_id") or str(sources.inbox_dir()),
         "options": pipeline.options(),
         "channels": google_auth.channels(),
         "active_channel": db.get("active_channel"),
@@ -105,12 +117,35 @@ def state():
 
 @app.post("/api/toggle")
 def toggle(t: Toggle):
-    if t.on and not (db.get("folder_id") and db.get("active_channel")):
-        raise HTTPException(400, "Connect YouTube and set the Drive folder first.")
+    if t.on and not db.get("active_channel"):
+        raise HTTPException(400, "Connect YouTube first.")
     db.put("enabled", "1" if t.on else "0")
     if t.on:
         start_watcher()
     return {"enabled": t.on}
+
+
+@app.post("/api/upload")
+async def upload(request: Request, name: str):
+    """Raw-body upload from the browser. Saved into the inbox, then picked up like any file."""
+    base = Path(name).name
+    if base.startswith(".") or Path(base).suffix.lower() not in sources.VIDEO_EXT | sources.SUB_EXT:
+        raise HTTPException(400, "Use a video (.mp4 .mov .mkv .webm .m4v) or a caption file (.srt .vtt).")
+    inbox = sources.inbox_dir()
+    dest, n = inbox / base, 1
+    while dest.exists():
+        dest = inbox / f"{Path(base).stem}-{n}{Path(base).suffix}"
+        n += 1
+    part = inbox / f".{dest.name}.part"
+    try:
+        with open(part, "wb") as f:
+            async for chunk in request.stream():
+                await asyncio.to_thread(f.write, chunk)
+        part.rename(dest)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
+    return {"saved": dest.name, "bytes": dest.stat().st_size}
 
 
 @app.post("/api/settings")
