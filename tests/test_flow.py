@@ -20,16 +20,25 @@ SCENES = [
 SEGS = [{"start": 28, "end": 34, "speaker": "player", "text": "ugh not again"}]
 
 
+OPPS = [
+    {"id": "o1", "t": 10, "beat_t": None, "salience": 4, "kinds": ["ambient"], "why": "quiet", "max_words": 12, "max_duration": 6, "kind": "ambient"},
+    {"id": "o2", "t": 30, "beat_t": None, "salience": 4, "kinds": ["ambient"], "why": "quiet", "max_words": 12, "max_duration": 6, "kind": "ambient"},
+    {"id": "o3", "t": 41, "beat_t": 40, "salience": 6, "kinds": ["damage_taken"], "why": "hurt", "max_words": 12, "max_duration": 6, "kind": "full"},
+    {"id": "o4", "t": 70, "beat_t": None, "salience": 4, "kinds": ["ambient"], "why": "quiet", "max_words": 12, "max_duration": 6, "kind": "ambient"},
+]
+
+
 def fake_claude_lines(system, user, max_tokens=8000):
     return json.dumps([
-        {"start": 10, "max_duration": 8, "persona": "player", "tone": "nerdy", "emotion": "awe",
+        {"opportunity": "o1", "persona": "player", "tone": "nerdy", "emotion": "awe",
          "trigger_t": None, "line": "Look at that light on the water.", "delivery": "soft"},
-        {"start": 30, "max_duration": 8, "persona": "player", "tone": "funny", "emotion": "calm",
+        {"opportunity": "o2", "persona": "player", "tone": "funny", "emotion": "calm",
          "trigger_t": None, "line": "Talking over the player.", "delivery": "x"},
-        {"start": 41, "max_duration": 8, "persona": "character", "tone": "visceral", "emotion": "pain",
-         "trigger_t": 40, "line": "Ngh. That one found bone.", "delivery": "pained"},
-        {"start": 70, "max_duration": 8, "persona": "player", "tone": "visceral", "emotion": "joy",
-         "trigger_t": 100, "line": "Invented joy with no event.", "delivery": "x"},
+        {"opportunity": "o3", "persona": "character", "tone": "visceral", "emotion": "pain",
+         "trigger_t": None, "line": "Ngh. That one found bone.", "delivery": "pained"},
+        {"opportunity": "o4", "persona": "player", "tone": "visceral", "emotion": "joy",
+         "trigger_t": None, "line": "Invented joy with no event.", "delivery": "x"},
+        {"opportunity": "nope", "persona": "player", "emotion": "calm", "line": "Unknown opportunity id."},
     ])
 
 
@@ -37,18 +46,22 @@ class WriterTests(unittest.TestCase):
     def test_guardrails_applied_to_model_output(self):
         system = writer.build_system("STYLE", OPTS)
         self.assertIn("SILENCE DURING SPEECH", system)
+        self.assertIn("OPPORTUNITIES ONLY", system)
         self.assertIn("STYLE", system)
         self.assertNotIn("{GUARDRAILS}", system)
         windows = guard.speech_windows(SEGS)
         with mock.patch("app.writer.claude", fake_claude_lines):
-            kept, dropped = writer.write_lines(SCENES, SEGS, windows, system, 120)
+            kept, dropped = writer.write_lines(SCENES, SEGS, windows, system, 120, OPPS)
         texts = [k["line"] for k in kept]
         self.assertIn("Look at that light on the water.", texts)
-        self.assertIn("Ngh. That one found bone.", texts)
+        self.assertIn("Ngh. That one found bone.", texts)  # trigger_t filled in from the beat
         self.assertNotIn("Talking over the player.", texts)
         self.assertNotIn("Invented joy with no event.", texts)
+        self.assertNotIn("Unknown opportunity id.", texts)
         reasons = {d["line"]: d["reason"] for d in dropped}
         self.assertEqual(reasons["Talking over the player."], "overlaps speech")
+        pain = next(k for k in kept if k["opp_id"] == "o3")
+        self.assertEqual((pain["start"], pain["trigger_t"], pain["beat_kinds"]), (41, 40, "damage_taken"))
 
 
 class EvolveTests(unittest.TestCase):

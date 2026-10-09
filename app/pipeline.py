@@ -4,8 +4,8 @@ import time
 import traceback
 from pathlib import Path
 
-from . import db, detect, evolve, guard, memory, publisher, scenes, sources, styles, transcript, voice, writer
-from .config import DATA
+from . import beats, db, detect, evolve, gaps, guard, memory, publisher, scenes, sources, styles, transcript, voice, writer
+from .config import DATA, MIN_GAP_FLOOR
 
 
 def options():
@@ -31,7 +31,7 @@ def start(vid, pack, personality, game):
 
 
 def amount():
-    return int(db.get("amount", 5))
+    return int(db.get("amount", 8))
 
 
 def youtube_on():
@@ -162,14 +162,29 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     opts = video_opts(v)
     if persona:
         opts["persona"] = persona
+    explicit = bool(amt)
     amt = int(amt or amount())
-    gap, _ = guard.amount_profile(amt)
 
+    # Plan: where can lines go, which moments are worth one, how eager should the brain be
     set_status(vid, "writing")
+    all_beats = beats.find_beats(notes, evolve.kind_weights())
+    free = gaps.free_gaps(windows, length)
+    opps, blocked = beats.opportunities(all_beats, free, length)
+    arm, offset = evolve.choose_arm(explicit)
+    eager = amt + evolve.density_bias(opts["pack"]) + offset
+    chosen, _ = beats.select(opps, eager, length)
+    db.run("UPDATE videos SET arm=? WHERE id=?", (arm, vid))
+
     system = writer.build_system(_style(v)["text"], opts)
-    lines, dropped = writer.write_lines(notes, segs, windows, system, length, amount=amt,
-                                        profile=memory.profile(), progress=progress_cb(vid, "Sections"))
-    lines = evolve.refine(lines, notes, windows, system, min_gap=gap)
+    profile = memory.profile()
+    lines, dropped = writer.write_lines(notes, segs, windows, system, length, chosen, profile=profile,
+                                        progress=progress_cb(vid, "Sections"))
+    lines, filled = writer.fill_missed(notes, segs, windows, system, lines, chosen, profile=profile)
+    lines = evolve.refine(lines, notes, windows, system, min_gap=MIN_GAP_FLOOR)
+    db.run("UPDATE videos SET stats=? WHERE id=?", (json.dumps({
+        "beats": len(all_beats), "blocked_by_speech": len(blocked), "gaps": len(free),
+        "micro_gaps": sum(1 for g in free if g["kind"] == "micro"), "planned": len(chosen),
+        "lines": len(lines), "filled": filled, "eagerness": round(eager, 1), "arm": arm}), vid))
     (work / "dropped.json").write_text(json.dumps(dropped, indent=2))
 
     set_status(vid, "voicing")
@@ -180,10 +195,10 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     db.run("DELETE FROM lines WHERE video_id=?", (vid,))
     for ln in lines:
         db.run("INSERT INTO lines(video_id,start,persona,tone,emotion,line,self_score,max_duration,"
-               "dropped,trigger_t,callback_t) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+               "dropped,trigger_t,callback_t,beat_kinds,salience) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                (vid, ln["start"], ln["persona"], ln.get("tone"), ln.get("emotion"), ln["line"],
                 ln.get("self_score"), ln.get("max_duration"), 1 if ln.get("dropped") else 0,
-                ln.get("trigger_t"), ln.get("callback_t")))
+                ln.get("trigger_t"), ln.get("callback_t"), ln.get("beat_kinds"), ln.get("salience")))
     evolve.rescore_video(vid)
     set_status(vid, "ready")
     try:

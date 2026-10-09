@@ -32,5 +32,8 @@ def detect(video, work):
         r = r[0] if r else {}
     for p in frames:
         p.unlink(missing_ok=True)
-    return {"game": r.get("game") or "unknown", "pack": styles.pack_id(r.get("pack")),
-            "confidence": r.get("confidence"), "reason": r.get("reason") or ""}
+    game = r.get("game") or "unknown"
+    known = styles.pack_for_game(game)
+    return {"game": game, "pack": known or styles.pack_id(r.get("pack")),
+            "confidence": r.get("confidence"),
+            "reason": (f"Recognized {game}, so the genre comes from the game. " if known else "") + (r.get("reason") or "")}

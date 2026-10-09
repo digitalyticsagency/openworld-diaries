@@ -8,11 +8,12 @@ Prompt style blocks compete (champion vs challenger). Hard guardrails never evol
 """
 import datetime
 import json
+import math
 import random
 import time
 
 from . import db, guard
-from .config import (CHALLENGER_SHARE, MUTATE_EVERY, PROMOTE_MARGIN,
+from .config import (ARM_OFFSET, ARM_SHARE, CHALLENGER_SHARE, MUTATE_EVERY, PROMOTE_MARGIN,
                      PROMOTE_MIN_VIDEOS, PROMPTS)
 from .llm import claude, parse_json
 
@@ -151,7 +152,58 @@ def fetch_analytics():
             print("analytics skipped:", v["yt_video_id"], e)
 
 
+def density_bias(pack):
+    """How much more (+) or less (-) eager the brain should be for this genre style, learned from
+    the 'too quiet / too chatty' ratings plus any shift earned by A/B testing."""
+    rows = db.rows("SELECT density_rating r FROM videos WHERE pack=? AND density_rating IS NOT NULL", (pack,))
+    quiet = sum(1 for r in rows if r["r"] == -1)
+    chatty = sum(1 for r in rows if r["r"] == 1)
+    right = sum(1 for r in rows if r["r"] == 0)
+    base = max(-3.0, min(3.0, 0.6 * (quiet - chatty) / (1 + 0.25 * right)))
+    return round(base + float(db.get(f"arm_shift:{pack}", 0)), 2)
+
+
+def kind_weights():
+    """Per-kind multipliers on beat scores, learned from thumbs on lines (1.0 means no opinion yet)."""
+    up, down = {}, {}
+    for r in db.rows("SELECT beat_kinds, thumb FROM lines WHERE thumb IN (1,-1) AND beat_kinds IS NOT NULL"):
+        for k in r["beat_kinds"].split(","):
+            (up if r["thumb"] == 1 else down)[k] = (up if r["thumb"] == 1 else down).get(k, 0) + 1
+    out = {}
+    for k in set(up) | set(down):
+        u, d = up.get(k, 0), down.get(k, 0)
+        out[k] = round(max(0.6, min(1.6, 1 + 0.2 * (u - d) / math.sqrt(u + d + 1))), 2)
+    return out
+
+
+def choose_arm(explicit):
+    """A/B: now and then, try a slightly more or less eager brain. Not when the user set the amount."""
+    if explicit or random.random() >= ARM_SHARE:
+        return "control", 0.0
+    return random.choice([("more", ARM_OFFSET), ("less", -ARM_OFFSET)])
+
+
+def maybe_shift(pack):
+    """If a tried eagerness beat the control by a clear margin over enough videos, adopt it."""
+    def scores(arm):
+        return [r["combined_score"] for r in db.rows(
+            "SELECT combined_score FROM videos WHERE pack=? AND arm=? AND combined_score IS NOT NULL", (pack, arm))]
+    control = scores("control")
+    if not control:
+        return None
+    base = sum(control) / len(control)
+    for arm, delta in (("more", 0.7), ("less", -0.7)):
+        s = scores(arm)
+        if len(s) >= PROMOTE_MIN_VIDEOS and sum(s) / len(s) > base + PROMOTE_MARGIN:
+            shift = max(-2.0, min(2.0, float(db.get(f"arm_shift:{pack}", 0)) + delta))
+            db.put(f"arm_shift:{pack}", shift)
+            db.run("UPDATE videos SET arm=? WHERE pack=? AND arm=?", (arm + "*", pack, arm))
+            return arm
+    return None
+
+
 def cycle():
     """Run after every video and from the UI button."""
     fetch_analytics()
-    return {"promote": maybe_promote(), "mutate": maybe_mutate()}
+    shifts = {p["pack"]: maybe_shift(p["pack"]) for p in db.rows("SELECT DISTINCT pack FROM videos WHERE pack IS NOT NULL")}
+    return {"promote": maybe_promote(), "mutate": maybe_mutate(), "eagerness_shift": {k: v for k, v in shifts.items() if v}}

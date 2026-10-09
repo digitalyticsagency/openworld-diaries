@@ -1,7 +1,7 @@
 import json
 
 from . import guard, styles
-from .config import PROMPTS, WINDOW_SECONDS
+from .config import MIN_GAP_FLOOR, PROMPTS, WINDOW_SECONDS
 from .llm import claude, parse_json
 
 PERSONA_RULE = {
@@ -26,45 +26,85 @@ def build_system(style, opts):
             .replace("{VOICE_NOTES}", opts.get("voice_notes") or "natural"))
 
 
-def _relevant(scenes, lo, hi):
-    """Quiet moments and interaction events only, to keep the prompt small."""
-    return [s for s in scenes if lo <= s["t"] < hi and (s.get("is_quiet_moment") or s.get("interactions"))]
-
-
 def _earlier_events(scenes, lo, limit=25):
     ev = [{"t": s["t"], "interactions": s.get("interactions"), "moral_events": s.get("moral_events")}
           for s in scenes if s["t"] < lo and (s.get("interactions") or s.get("moral_events"))]
     return ev[-limit:]
 
 
-def write_lines(scenes, segments, windows, system, video_len, amount=5, profile=None, progress=None):
-    gap, lpm = guard.amount_profile(amount)
+def _notes_for(scenes, opps):
+    """Scene notes from just before each opportunity up to it, so the model sees what led there."""
+    keep = {}
+    for o in opps:
+        end = o["t"]
+        begin = (o["beat_t"] if o["beat_t"] is not None else o["t"]) - 9
+        for n in scenes:
+            if begin <= n["t"] <= end:
+                keep[n["t"]] = n
+    return [keep[t] for t in sorted(keep)]
+
+
+def _lines_from(raw, by_id):
+    """Turn the model's answers into timed lines. Times and room come from the plan, not the model."""
+    out = []
+    for r in raw if isinstance(raw, list) else []:
+        o = by_id.get(r.get("opportunity"))
+        if not o or not (r.get("line") or "").strip():
+            continue
+        ln = {**r, "start": o["t"], "max_duration": o["max_duration"], "max_words": o["max_words"],
+              "opp_id": o["id"], "beat_kinds": ",".join(o["kinds"]), "salience": o["salience"]}
+        if ln.get("trigger_t") is None and o["beat_t"] is not None:
+            ln["trigger_t"] = o["beat_t"]
+        out.append(ln)
+    return out
+
+
+def _ask(system, opps, scenes, segments, windows, kept, profile, lo, hi, note=""):
+    by_id = {o["id"]: o for o in opps}
+    user = {
+        "window": [lo, hi],
+        "opportunities": [{"id": o["id"], "at_seconds": o["t"], "max_words": o["max_words"], "kind": o["kind"],
+                           "salience": o["salience"], "why": o["why"]} for o in opps],
+        "scene_notes": _notes_for(scenes, opps),
+        "speech_segments": [s for s in segments if s["end"] > lo and s["start"] < hi],
+        "locked_windows": [w for w in windows if w[1] > lo and w[0] < hi],
+        "earlier_lines": [k["line"] for k in kept[-8:]],
+        "earlier_events": _earlier_events(scenes, lo),
+        "player_profile": profile or [],
+    }
+    if note:
+        user["note"] = note
+    return _lines_from(parse_json(claude(system, json.dumps(user))), by_id)
+
+
+def write_lines(scenes, segments, windows, system, video_len, opps, profile=None, progress=None):
+    """One line per chosen opportunity at most. Returns (kept, dropped)."""
     total_windows = max(1, int(-(-video_len // WINDOW_SECONDS)))
-    all_kept, all_dropped = [], []
+    kept, dropped = [], []
     lo = 0.0
     while lo < video_len:
         hi = lo + WINDOW_SECONDS
-        sc = _relevant(scenes, lo, hi)
-        if sc:
-            seg = [s for s in segments if s["end"] > lo and s["start"] < hi]
-            win = [w for w in windows if w[1] > lo and w[0] < hi]
-            user = json.dumps({
-                "window": [lo, min(hi, video_len)],
-                "scene_notes": sc,
-                "speech_segments": seg,
-                "locked_windows": win,
-                "earlier_lines": [k["line"] for k in all_kept[-8:]],
-                "earlier_events": _earlier_events(scenes, lo),
-                "commentary": {"min_gap_seconds": gap, "target_lines_per_minute": lpm},
-                "player_profile": profile or [],
-            })
-            raw = parse_json(claude(system, user))
-            kept, dropped = guard.enforce(all_kept[-1:] + raw, windows, scenes, min_gap=gap) if all_kept else guard.enforce(raw, windows, scenes, min_gap=gap)
-            # keep only this window's new lines (the carried line is already in all_kept)
-            new = [k for k in kept if k["start"] >= lo]
-            all_kept += new
-            all_dropped += [d for d in dropped if d["start"] >= lo]
+        sel = [o for o in opps if lo <= o["t"] < hi]
+        if sel:
+            new = _ask(system, sel, scenes, segments, windows, kept, profile, lo, min(hi, video_len))
+            k, d = guard.enforce(kept[-1:] + new if kept else new, windows, scenes, min_gap=MIN_GAP_FLOOR)
+            kept += [x for x in k if x["start"] >= lo]
+            dropped += [x for x in d if x["start"] >= lo]
         lo = hi
         if progress:
             progress(min(int(lo // WINDOW_SECONDS), total_windows), total_windows)
-    return all_kept, all_dropped
+    return kept, dropped
+
+
+def fill_missed(scenes, segments, windows, system, kept, opps, profile=None, min_salience=7.0, limit=6):
+    """Self-check: strong moments the first pass left without a line get one more chance."""
+    done = {k.get("opp_id") for k in kept}
+    missed = sorted((o for o in opps if o["id"] not in done and o["salience"] >= min_salience),
+                    key=lambda o: -o["salience"])[:limit]
+    if not missed:
+        return kept, 0
+    new = _ask(system, sorted(missed, key=lambda o: o["t"]), scenes, segments, windows, kept, profile,
+               missed[0]["t"] - 1, max(o["t"] for o in missed) + 1,
+               note="These strong moments were left without a line. Write one for each unless it truly cannot be done honestly.")
+    merged, _ = guard.enforce(kept + new, windows, scenes, min_gap=MIN_GAP_FLOOR)
+    return merged, len(merged) - len(kept)

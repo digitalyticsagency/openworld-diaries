@@ -58,16 +58,19 @@ class GuardFeatureTests(unittest.TestCase):
 
 
 class WriterFeatureTests(unittest.TestCase):
-    def test_amount_profile_and_memory_reach_the_model(self):
+    def test_plan_and_memory_reach_the_model(self):
         seen = {}
 
         def fake(system, user, max_tokens=8000):
             seen.update(json.loads(user))
             return "[]"
+        opps = [{"id": "b0", "t": 40, "beat_t": 40, "salience": 6, "kinds": ["damage_taken"], "why": "hurt",
+                 "max_words": 10, "max_duration": 5, "kind": "full"}]
         opts = {"game": "g", "persona": "mixed", "character": "", "story_point": "", "voice_notes": ""}
         with mock.patch("app.writer.claude", fake):
-            writer.write_lines(SCENES, [], [], "SYS", 100, amount=9, profile=["rides fast"])
-        self.assertEqual(seen["commentary"]["min_gap_seconds"], guard.amount_profile(9)[0])
+            writer.write_lines(SCENES, [], [], "SYS", 100, opps, profile=["rides fast"])
+        self.assertEqual(seen["opportunities"][0]["id"], "b0")
+        self.assertEqual(seen["opportunities"][0]["max_words"], 10)
         self.assertEqual(seen["player_profile"], ["rides fast"])
         self.assertIn("earlier_events", seen)
         self.assertIn("CONSEQUENCES", writer.build_system("S", opts))

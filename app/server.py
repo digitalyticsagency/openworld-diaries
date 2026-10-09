@@ -120,6 +120,10 @@ class Regen(BaseModel):
     game: str | None = None
 
 
+class Density(BaseModel):
+    value: int
+
+
 class Start(BaseModel):
     pack: str
     personality: str = "balanced"
@@ -171,8 +175,10 @@ def state():
         "learn": db.get("learn", "1") == "1",
         "videos": [{**v, "has_video": pipeline.final_path(v["id"]).exists()} for v in db.rows(
             "SELECT id,name,status,error,self_score,combined_score,yt_video_id,pack,personality,game,suggestion,"
-            "status_at,started_at,progress "
+            "status_at,started_at,progress,density_rating,stats,arm "
             "FROM videos ORDER BY id DESC LIMIT 50")],
+        "brain": {"bias": {p: evolve.density_bias(p) for p in styles.PACKS if evolve.density_bias(p)},
+                  "kind_weights": evolve.kind_weights()},
         "memory": db.rows("SELECT id,kind,text,count FROM memory ORDER BY count DESC, updated DESC LIMIT 40"),
         "ratings": db.one("SELECT COALESCE(SUM(thumb=1),0) up, COALESCE(SUM(thumb=-1),0) down FROM lines"),
         "prompts": db.rows("SELECT id,status,n,score_sum,created FROM prompt_versions ORDER BY id DESC LIMIT 10"),
@@ -284,6 +290,16 @@ def regenerate(vid: int, r: Regen):
         raise HTTPException(400, "The saved scan is missing; use Retry to process it again.")
     pipeline.set_status(vid, "writing")
     run_bg(pipeline.regenerate, vid, r.amount, r.persona, r.pack, r.personality, r.game)
+    return {"ok": True}
+
+
+@app.post("/api/videos/{vid}/density")
+def density(vid: int, d: Density):
+    """How was the amount of commentary? -1 too quiet, 0 just right, 1 too chatty."""
+    if d.value not in (-1, 0, 1):
+        raise HTTPException(400, "value must be -1, 0 or 1")
+    idle_video(vid)
+    db.run("UPDATE videos SET density_rating=? WHERE id=?", (d.value, vid))
     return {"ok": True}
 
 

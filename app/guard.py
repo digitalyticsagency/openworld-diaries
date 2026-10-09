@@ -2,7 +2,7 @@
 
 Pure functions, no network. See tests/test_guard.py.
 """
-from .config import MAX_WORDS, MIN_GAP, SPEECH_BUFFER, WORDS_PER_SEC
+from .config import BUFFER_GAME, BUFFER_OTHER, MAX_WORDS, MIN_GAP, SPEECH_BUFFER, WORDS_PER_SEC
 
 STRONG_EMOTIONS = {"pain", "joy", "fear", "grief", "relief", "pride", "disgust", "guilt", "regret"}
 
@@ -19,9 +19,19 @@ def amount_profile(amount):
 EVENT_WINDOW = 4.0  # seconds a scene event may sit away from trigger_t
 
 
-def speech_windows(segments, buffer=SPEECH_BUFFER):
-    """Merge speech segments into locked (start, end) windows with a safety buffer."""
-    spans = sorted((max(0.0, s["start"] - buffer), s["end"] + buffer)
+def _buffer(seg):
+    sp = seg.get("speaker")
+    if sp == "player" or sp is None:
+        return SPEECH_BUFFER
+    return BUFFER_GAME if sp == "game" else BUFFER_OTHER
+
+
+def speech_windows(segments, buffer=None):
+    """Merge speech segments into locked (start, end) windows with a safety buffer.
+    The player's own voice keeps the widest buffer; game dialogue gets a tighter one so lines can
+    fit between it. Pass an explicit buffer to override."""
+    spans = sorted((max(0.0, s["start"] - (_buffer(s) if buffer is None else buffer)),
+                    s["end"] + (_buffer(s) if buffer is None else buffer))
                    for s in segments if s.get("end", 0) > s.get("start", 0))
     merged = []
     for a, b in spans:
@@ -81,7 +91,7 @@ def enforce(lines, windows, scenes, min_gap=None, max_words=MAX_WORDS):
         reason = None
         if not text:
             reason = "empty"
-        elif len(text.split()) > max_words:
+        elif len(text.split()) > (ln.get("max_words") or max_words):
             reason = "too long"
         else:
             room = next_lock_start(start, windows) - start - 0.3

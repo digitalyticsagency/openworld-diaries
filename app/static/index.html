@@ -131,10 +131,10 @@
     </div>
     <label for="voice_notes">Character voice notes</label>
     <input id="voice_notes" placeholder="weary outlaw, loyal, ashamed">
-    <label for="amount">Commentary amount: <strong id="amountLabel"></strong></label>
+    <label for="amount">Commentary eagerness: <strong id="amountLabel"></strong></label>
     <input id="amount" type="range" min="1" max="10" step="1">
     <div class="presets" role="group" aria-label="Commentary presets">
-      <button class="s" data-preset="2">Sparse</button><button class="s" data-preset="5">Balanced</button><button class="s" data-preset="9">Chatty</button>
+      <button class="s" data-preset="4">Sparse</button><button class="s" data-preset="8">Balanced</button><button class="s" data-preset="10">Chatty</button>
     </div>
     <div class="row">
       <div><label for="personality">Default personality (layered on top of the genre style)</label><select id="personality"></select></div>
@@ -183,8 +183,7 @@ const api = async (path, body) => {
 const say = (t, err) => { $('msg').textContent = t; $('msg').className = err ? 'err' : ''; };
 const OPEN = new Set();
 let ready = false, lastSig = '';
-const LPM = [0.5,0.8,1.2,1.6,2,2.5,3,3.5,4.2,5];
-const LEVEL = n => (n<=3 ? 'Sparse' : n<=6 ? 'Balanced' : 'Chatty') + ` · about ${LPM[n-1]} lines a minute`;
+const LEVEL = n => n<=4 ? 'Sparse · only the strongest moments' : n<=7 ? 'Measured · strong moments and a few quiet thoughts' : 'Balanced to chatty · most meaningful moments, plus atmosphere in long silences';
 const WORKING = ['downloading','detecting','listening','watching','writing','voicing','uploading'];
 const BUSYLIKE = [...WORKING, 'queued'];
 const REGEN = {};
@@ -229,6 +228,17 @@ function chooser(v) {
     <div class="acts"><button class="s primary" data-startstyle="${v.id}">Start commentary</button><span class="small">The paid scan only begins when you press this.</span></div></div>`;
 }
 
+function brainLine(v) {
+  if (!v.stats || BUSYLIKE.includes(v.status)) return '';
+  let st = {}; try { st = JSON.parse(v.stats); } catch (_) { return ''; }
+  const r = v.density_rating;
+  return `<div class="prog">Found ${st.beats} emotional moments · ${st.gaps} usable gaps between speech (${st.micro_gaps} short) · ${st.planned} planned · ${st.lines} spoken${st.filled ? ` (${st.filled} added by the self-check)` : ''}${st.blocked_by_speech ? ` · ${st.blocked_by_speech} landed in speech` : ''} · eagerness ${st.eagerness}${st.arm && st.arm.startsWith('m') || st.arm === 'less' ? ' (testing)' : ''}</div>
+    <div class="acts"><span class="small">How was the amount of commentary?</span>
+      <button class="s ${r===-1?'primary':''}" data-dens="${v.id}:-1">Too quiet</button>
+      <button class="s ${r===0?'primary':''}" data-dens="${v.id}:0">Just right</button>
+      <button class="s ${r===1?'primary':''}" data-dens="${v.id}:1">Too chatty</button></div>`;
+}
+
 function card(v) {
   const busy = BUSYLIKE.includes(v.status);
   const cls = busy ? 'working' : v.status;
@@ -244,7 +254,7 @@ function card(v) {
       ${v.has_video && !busy ? `<a class="s" href="/api/videos/${v.id}/download" download>Download video</a>` : ''}
       <button class="s" data-lines="${v.id}">Lines</button>
       ${!busy && v.has_video ? `
-        <select data-regsel="${v.id}:amount" aria-label="Commentary amount"><option value="">Same amount</option><option value="2" ${r.amount==='2'?'selected':''}>Sparse</option><option value="5" ${r.amount==='5'?'selected':''}>Balanced</option><option value="9" ${r.amount==='9'?'selected':''}>Chatty</option></select>
+        <select data-regsel="${v.id}:amount" aria-label="Commentary amount"><option value="">Same eagerness</option><option value="4" ${r.amount==='4'?'selected':''}>Sparse</option><option value="8" ${r.amount==='8'?'selected':''}>Balanced</option><option value="10" ${r.amount==='10'?'selected':''}>Chatty</option></select>
         <select data-regsel="${v.id}:pack" aria-label="Genre style"><option value="">Same style</option>${opt(CAT.packs, r.pack)}</select>
         <select data-regsel="${v.id}:personality" aria-label="Personality"><option value="">Same personality</option>${opt(CAT.personalities, r.personality)}</select>
         <button class="s" data-regen="${v.id}">Regenerate</button>` : ''}
@@ -254,7 +264,7 @@ function card(v) {
       ${v.status==='failed' ? `<button class="s" data-retry="${v.id}">Retry</button>` : ''}
       ${!busy ? `<button class="s danger" data-del="${v.id}">Delete</button>` : ''}
       <span class="small">${v.combined_score!=null ? 'score ' + v.combined_score.toFixed(1) : ''}</span>
-    </div><div id="l${v.id}"></div></div>`;
+    </div>${brainLine(v)}<div id="l${v.id}"></div></div>`;
 }
 
 async function loadVoices() {
@@ -293,7 +303,7 @@ async function load() {
     live.innerHTML = `<div><span class="step">Waiting to start</span></div><div class="prog">${waiting.length} video${waiting.length > 1 ? 's' : ''} in line${s.enabled ? '' : '. Turn AUTO on to process them.'}</div>`;
   } else { live.hidden = true; live.innerHTML = ''; }
   tick();
-  const sig = JSON.stringify([s.videos, s.channels, s.active_channel, s.memory, s.prompts, s.ratings]);
+  const sig = JSON.stringify([s.videos, s.channels, s.active_channel, s.memory, s.prompts, s.ratings, s.brain]);
   if (sig === lastSig) return;
   lastSig = sig;
   $('channel').innerHTML = s.channels.length
@@ -304,7 +314,11 @@ async function load() {
   $('memory').innerHTML = s.memory.length ? s.memory.map(m =>
     `<div class="mem"><span>${esc(m.text)} <span class="small">${m.kind}${m.count>1 ? ' · seen ' + m.count + 'x' : ''}</span></span><button class="s danger" data-forget="${m.id}">Forget</button></div>`).join('')
     : 'Nothing yet. It learns after each video.';
-  $('ratings').textContent = `Your ratings so far: ${s.ratings.up} good, ${s.ratings.down} bad. Rated lines steer the next prompt version.`;
+  const bias = Object.entries(s.brain.bias).map(([p, b]) => `${esc(packName(p))}: ${b > 0 ? 'more eager' : 'less eager'} (${b > 0 ? '+' : ''}${b})`);
+  const kw = Object.entries(s.brain.kind_weights).filter(([, w]) => w !== 1).map(([k, w]) => `${esc(k.replace('_', ' '))} x${w}`);
+  $('ratings').innerHTML = `Your ratings so far: ${s.ratings.up} good, ${s.ratings.down} bad. Rated lines steer the next prompt version.<br>` +
+    `Learned eagerness: ${bias.length ? bias.join(' · ') : 'no adjustment yet (rate a video as too quiet or too chatty).'}<br>` +
+    `Learned taste for moments: ${kw.length ? kw.join(' · ') : 'none yet (use 👍/👎 on lines).'}`;
   $('prompts').innerHTML = s.prompts.map(p =>
     `v${p.id} · ${p.status} · ${p.n} videos · avg ${p.n ? (p.score_sum/p.n).toFixed(2) : '-'}`).join('<br>');
 }
@@ -368,6 +382,7 @@ document.addEventListener('click', async e => {
     if (d.regen) { const r = REGEN[d.regen] || {}, b = {}; if (r.amount) b.amount = +r.amount; if (r.pack) b.pack = r.pack; if (r.personality) b.personality = r.personality;
       await api(`videos/${d.regen}/regenerate`, b); say('Regenerating the commentary from the saved scan...'); await refresh(); }
     if (d.startstyle) { const c = CHOOSE[d.startstyle]; await api(`videos/${d.startstyle}/start`, { pack: c.pack, personality: c.personality, game: c.game }); delete CHOOSE[d.startstyle]; say('Started.'); await refresh(); }
+    if (d.dens) { const [id, val] = d.dens.split(':'); await api(`videos/${id}/density`, { value: +val }); say('Thanks. The brain adjusts how eager it is for this genre style.'); await refresh(); }
     if (d.vprev) { const id = $('v_' + d.vprev).value; say('Playing a sample...'); const r = await fetch('/api/voices/preview', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ voice_id: id }) });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Preview failed'); new Audio(URL.createObjectURL(await r.blob())).play(); say(''); }
     if (d.rerender) { await api(`videos/${d.rerender}/rerender`, {}); say('Re-rendering with your edits...'); await refresh(); }

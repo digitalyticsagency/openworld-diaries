@@ -33,6 +33,17 @@ Drive folder ──► download ──► transcript (who speaks, when) ──�
 - **Voices per style:** pick the player, character and companion voices for each genre style from your ElevenLabs account, with a Preview button. Your own voice is the default player voice everywhere.
 - **Memory:** it remembers your playstyle across videos (habits, places, running jokes). You can see and **Forget** any entry, or turn learning off.
 
+## How the brain decides when to speak
+
+1. **Gap planner:** speech is found first (the player's own voice keeps a 1.5 s safety buffer, game dialogue 0.6 s). The free stretches between speech are measured and sized in words, so a 3 second gap gets a micro-line of a few words and a long gap gets a full line.
+2. **Emotion beats:** every scanned moment gets an emotional weight from the events found (a death or a kill weighs more than a pickup), moral choices, arriving somewhere new and small details. Local peaks become beats.
+3. **Opportunities:** each beat is placed in a real gap, at or just after the moment (a beat that lands inside speech is answered right after it). Long silences get quiet atmosphere spots.
+4. **Eagerness:** the slider (plus what the brain has learned) sets a bar. Only moments above the bar are chosen, strong moments may follow each other closer than weak ones, and very long droughts are broken by the best available spot.
+5. **Writing:** Claude writes at most one line per chosen opportunity, sized to its room, and may skip one if nothing earns a line. Code sets the times, so lines can never land on speech.
+6. **Self-check:** strong moments that ended up with no line get one more chance.
+
+**How it evolves:** rate each video too quiet, just right or too chatty (it adjusts eagerness separately for each genre style); 👍/👎 on lines teaches which kinds of moments you like; about one video in four tries a slightly more or less eager setting and keeps it if it scores better.
+
 ## Self-improvement
 
 Each video is scored three ways: an editor pass by Claude (weak lines get one rewrite), your thumbs up/down on each line, and YouTube's average view percentage. A challenger style prompt is generated every 5 scored videos and used on about 30% of new videos. If it beats the champion by 0.3 points over at least 3 videos, it becomes the champion. Versions are kept in the database.

@@ -120,6 +120,29 @@ PERSONALITIES = {
 }
 
 
+GAME_PACKS = [
+    ("western", ("red dead", "call of juarez", "hard west", "desperados", "gunfighter")),
+    ("crime", ("grand theft auto", "gta", "saints row", "watch dogs", "mafia", "sleeping dogs", "payday")),
+    ("horror", ("resident evil", "silent hill", "dead space", "alien: isolation", "outlast", "amnesia", "the evil within", "fatal frame", "phasmophobia")),
+    ("fantasy", ("skyrim", "witcher", "elden ring", "baldur", "dark souls", "dragon age", "diablo", "fable", "hogwarts", "dragon's dogma", "zelda")),
+    ("shooter", ("call of duty", "warzone", "fortnite", "valorant", "apex legends", "battlefield", "counter-strike", "overwatch", "pubg", "rainbow six", "halo", "doom")),
+    ("racing", ("forza", "need for speed", "gran turismo", "assetto", "mario kart", "the crew", "f1 ", "dirt rally", "wreckfest")),
+    ("sports", ("fifa", "ea sports fc", "nba 2k", "madden", "rocket league", "nhl", "efootball", "pga", "wwe 2k", "ufc")),
+    ("sandbox", ("minecraft", "rust", "valheim", "terraria", "subnautica", "the forest", "ark:", "7 days to die", "satisfactory", "no man's sky survival")),
+    ("scifi", ("starfield", "no man's sky", "mass effect", "elite dangerous", "star citizen", "outer worlds", "cyberpunk", "star wars", "destiny")),
+    ("cozy", ("stardew", "animal crossing", "unpacking", "a short hike", "spiritfarer", "cozy grove", "powerwash", "disney dreamlight", "coral island")),
+]
+
+
+def pack_for_game(game):
+    """Known titles decide the genre style; None for games not in the list."""
+    g = (game or "").lower()
+    for pack, names in GAME_PACKS:
+        if any(n in g for n in names):
+            return pack
+    return None
+
+
 def pack_id(value):
     return value if value in PACKS else DEFAULT_PACK
 
