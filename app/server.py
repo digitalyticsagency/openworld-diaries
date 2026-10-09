@@ -108,6 +108,7 @@ class Settings(BaseModel):
     youtube_publish: bool | None = None
     ask_style: bool | None = None
     ab_test: bool | None = None
+    one_voice: bool | None = None
     cutscene_quiet: bool | None = None
     cap_commentary: bool | None = None
     cap_dialogue: bool | None = None
@@ -186,6 +187,7 @@ def state():
         "ask_style": db.get("ask_style", "1") == "1",
         "ab_test": db.get("ab_test", "0") == "1",
         "cutscene_quiet": pipeline.cutscene_quiet(),
+        "one_voice": pipeline.one_voice(),
         "cap_commentary": pipeline.cap_commentary(),
         "cap_dialogue": pipeline.cap_dialogue(),
         "target_lpm": pipeline.target_lpm() or 0,
@@ -194,7 +196,7 @@ def state():
         "amount": pipeline.amount(),
         "learn": db.get("learn", "1") == "1",
         "videos": [{**v, "has_video": pipeline.final_path(v["id"]).exists(),
-                    "voices": voices.assigned(v["pack"]), "known_pack": styles.pack_for_game(v["game"]),
+                    "voices": {p: voices.resolve(v["pack"], p) for p in ("player", "character", "companion")}, "known_pack": styles.pack_for_game(v["game"]),
                     "cut_count": len(cutscenes.effective(cutscenes.load(v["cutscenes"]))),
                     "cut_seconds": cutscenes.total_seconds(cutscenes.effective(cutscenes.load(v["cutscenes"])))} for v in db.rows(
             "SELECT id,name,status,error,self_score,combined_score,yt_video_id,pack,personality,game,suggestion,cutscenes,"
@@ -250,7 +252,7 @@ def settings(s: Settings):
             v = styles.pack_id(v)
         elif k == "personality":
             v = styles.personality_id(v)
-        elif k in ("youtube_publish", "learn", "ask_style", "ab_test", "cap_commentary", "cap_dialogue", "cutscene_quiet"):
+        elif k in ("youtube_publish", "learn", "ask_style", "ab_test", "cap_commentary", "cap_dialogue", "cutscene_quiet", "one_voice"):
             v = "1" if v else "0"
         elif k == "amount":
             v = max(1, min(10, v))

@@ -33,6 +33,13 @@ Drive folder ──► download ──► transcript (who speaks, when) ──�
 - **Voices per style:** pick the player, character and companion voices for each genre style from your ElevenLabs account, with a Preview button. Your own voice is the default player voice everywhere.
 - **Memory:** it remembers your playstyle across videos (habits, places, running jokes). You can see and **Forget** any entry, or turn learning off.
 
+## Sound
+
+- **The audio always runs the whole video.** The voice track is padded to full length and the result follows the game audio, and every finished video is checked: if its sound ends earlier than its picture, it is reported as failed instead of being delivered.
+- **One consistent voice.** On by default: every line is spoken in the Character voice of the genre style (for Red Dead, Arthur) and written in the first person. Turn it off in Voice to alternate between the three personas.
+- **Even loudness.** Each spoken line is brought to the same level (spread under 1 dB), and the voice settings are steady with a fixed seed, so the same voice sounds like the same person.
+- **Ducking.** While the voice speaks, the game audio is lowered so the voice sits about 12 dB above it.
+
 ## Cutscenes
 
 Cinematics play untouched: no voice, no silent thoughts and no captions. They are found from three signals, and any one counts (when unsure, it assumes a cutscene): cinematic black bars across the top and bottom of the frame (a quick free check of the video), the vision scan's cutscene flag, and the scan's player state. Right after a long cutscene ends there is one short reaction, built only from what was said in it. On each video, the **Cutscenes** button lists the ranges so you can mark one as not a cutscene, add one by hand (for example 1:05 to 2:30), or look again. After changing ranges, press Rebuild video (lines inside new cutscenes are dropped) or Regenerate commentary.

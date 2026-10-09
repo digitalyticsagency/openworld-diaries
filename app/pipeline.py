@@ -21,6 +21,8 @@ def video_opts(v):
     if v.get("game"):
         o["game"] = v["game"]
     o["pack"] = styles.pack_id(v.get("pack"))
+    if one_voice() and o["persona"] == "mixed":
+        o["persona"] = "character"   # one steady first-person voice, not three alternating ones
     o["personality"] = styles.personality_id(v.get("personality") or db.get("personality"))
     return o
 
@@ -45,6 +47,11 @@ def workdir(vid):
 
 def final_path(vid):
     return workdir(vid) / "final.mp4"
+
+
+def one_voice():
+    """One consistent voice for all commentary (the Character voice). On by default."""
+    return db.get("one_voice", "1") == "1"
 
 
 def target_lpm():
@@ -129,6 +136,7 @@ def _finish(vid, lines, clips, segs, src, blocks=None):
     dlg = captions.dialogue_items(segs, blocks) if cap_dialogue() else []
     captions.burn(mixed, final_path(vid), dlg, com, work, progress=progress_cb(vid, "Captions"))
     mixed.unlink(missing_ok=True)
+    voice.verify_av(final_path(vid))
 
 
 WORKING = {"downloading", "detecting", "listening", "watching", "cutscenes", "writing", "voicing", "captioning", "uploading"}

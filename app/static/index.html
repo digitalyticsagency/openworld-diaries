@@ -165,6 +165,9 @@
       <label class="rad"><input type="radio" name="amtmode" value="auto" id="amt_auto"> <span><strong>Automatic</strong> · the emotion of each moment decides (the slider above sets how eager)</span></label>
       <label class="rad"><input type="radio" name="amtmode" value="manual" id="amt_manual"> <span><strong>Manual</strong> · aim for <input type="number" id="lpm" min="1" max="12" step="0.5" value="5" style="width:80px;display:inline-block;padding:6px 8px"> lines a minute, spoken lines plus silent thoughts, as far as the video's room allows</span></label>
     </fieldset>
+    <fieldset class="grp"><legend>Voice</legend>
+      <label class="sw"><input type="checkbox" id="onev" role="switch"><span><strong>One consistent voice for all commentary</strong><br><span class="small">Every line is spoken in the Character voice of the genre style (for Red Dead, that is Arthur), written in the first person, with each line brought to the same loudness. Turn it off to alternate between the Player, Character and Companion voices.</span></span></label>
+    </fieldset>
     <fieldset class="grp"><legend>Cutscenes</legend>
       <label class="sw"><input type="checkbox" id="cutq" role="switch"><span><strong>Stay silent and hide every caption during cutscenes</strong><br><span class="small">Cinematics are found from their black bars and from the scan. When it cannot tell, it assumes a cutscene. Right after a cutscene ends there is one short reaction. You can correct the ranges on each video.</span></span></label>
     </fieldset>
@@ -184,6 +187,7 @@
     <div class="vrow"><span>Player</span><select id="v_player" data-vp="player"></select><button class="s" data-vprev="player">Preview</button></div>
     <div class="vrow"><span>Character</span><select id="v_character" data-vp="character"></select><button class="s" data-vprev="character">Preview</button></div>
     <div class="vrow"><span>Companion</span><select id="v_companion" data-vp="companion"></select><button class="s" data-vprev="companion">Preview</button></div>
+    <p class="small" id="onevnote">With one consistent voice on, only the Character voice is used; Player and Companion are greyed out.</p>
     <p class="small">Changes save instantly. They apply to videos made with this style from now on, and to existing ones when you press Rebuild video. Preview plays a short sample and uses a few ElevenLabs credits.</p>
     <div id="vusers" class="small"></div>
   </section>
@@ -245,6 +249,8 @@ function setAmount(n) {
   document.querySelectorAll('[data-preset]').forEach(b => b.classList.toggle('on', +b.dataset.preset === +n));
 }
 
+let ONEVOICE = true;
+function markOneVoice() { for (const p of ['player', 'companion']) { const sel = $('v_' + p); if (sel) sel.disabled = ONEVOICE; sel && (sel.title = ONEVOICE ? 'Not used while one consistent voice is on' : ''); } }
 let CAT = {packs: [], personalities: []}, PERSONALITY = 'balanced', VOICES = [], VIDEOS = [];
 const vname = id => (VOICES.find(v => v.id === id) || {}).name || 'a voice';
 const CHOOSE = {};
@@ -331,6 +337,7 @@ async function loadVoices() {
     const list = VOICES.some(v => v.id === a[p]) ? VOICES : [{ id: a[p], name: 'Current voice' }, ...VOICES];
     $('v_' + p).innerHTML = opt(list, a[p]);
   }
+  markOneVoice();
   renderVusers();
   lastSig = ''; load();
 }
@@ -347,7 +354,7 @@ async function load() {
     CAT = { packs: s.packs, personalities: s.personalities }; PERSONALITY = s.personality;
     $('personality').innerHTML = opt(CAT.personalities, s.personality);
     $('vpack').innerHTML = opt(CAT.packs, 'western'); loadVoices();
-    setAmount(s.amount); $('yt').checked = s.youtube_publish; $('learn').checked = s.learn; $('ask').checked = s.ask_style; $('ab').checked = s.ab_test; $('cutq').checked = s.cutscene_quiet; $('cap_com').checked = s.cap_commentary; $('cap_dlg').checked = s.cap_dialogue;
+    setAmount(s.amount); $('yt').checked = s.youtube_publish; $('learn').checked = s.learn; $('ask').checked = s.ask_style; $('ab').checked = s.ab_test; $('cutq').checked = s.cutscene_quiet; $('onev').checked = s.one_voice; ONEVOICE = s.one_voice; markOneVoice(); $('cap_com').checked = s.cap_commentary; $('cap_dlg').checked = s.cap_dialogue;
     $('amt_manual').checked = s.target_lpm > 0; $('amt_auto').checked = !(s.target_lpm > 0); if (s.target_lpm > 0) $('lpm').value = s.target_lpm; $('lpm').disabled = !(s.target_lpm > 0);
   }
   VIDEOS = s.videos; PERSONALITY = s.personality; CLOCK = s.server_time - Date.now()/1000;
@@ -432,6 +439,8 @@ const saveAmtMode = async () => { const manual = $('amt_manual').checked; $('lpm
   await api('settings', { target_lpm: manual ? +$('lpm').value || 5 : 0 });
   say(manual ? `Aiming for about ${$('lpm').value} lines a minute.` : 'Automatic: the emotion of each moment decides.'); };
 $('amt_auto').onchange = saveAmtMode; $('amt_manual').onchange = saveAmtMode; $('lpm').onchange = saveAmtMode;
+$('onev').onchange = async () => { await api('settings', { one_voice: $('onev').checked }); ONEVOICE = $('onev').checked; markOneVoice();
+  say($('onev').checked ? 'One consistent voice. Rebuild a video to hear it.' : 'Voices alternate between the three personas again. Regenerate commentary to apply.'); lastSig = ''; load(); };
 $('cutq').onchange = async () => { await api('settings', { cutscene_quiet: $('cutq').checked }); say($('cutq').checked ? 'Cutscenes are kept silent and caption-free for new and rebuilt videos.' : 'Cutscenes are no longer treated specially.'); };
 $('cap_com').onchange = async () => { await api('settings', { cap_commentary: $('cap_com').checked }); say($('cap_com').checked ? 'Commentary captions and silent thoughts are on for new and rebuilt videos.' : 'Commentary captions are off.'); };
 $('cap_dlg').onchange = async () => { await api('settings', { cap_dialogue: $('cap_dlg').checked }); say($('cap_dlg').checked ? 'Dialogue subtitles are on for new and rebuilt videos.' : 'Dialogue subtitles are off.'); };

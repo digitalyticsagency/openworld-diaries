@@ -9,15 +9,23 @@ from . import db, styles
 _cache = {"at": 0, "voices": []}
 
 
-def resolve(pack, persona):
-    """Your choice for this pack, else the pack default, else the voice from .env."""
+def configured(pack, persona):
+    """The voice set for this slot: your choice, else the pack default, else the voice from .env."""
     return (db.get(f"voice:{styles.pack_id(pack)}:{persona}")
             or styles.default_voice(pack, persona)
             or os.environ.get(f"ELEVEN_VOICE_{persona.upper()}"))
 
 
+def resolve(pack, persona):
+    """The voice that actually speaks. With one consistent voice on, every line uses the Character voice."""
+    if db.get("one_voice", "1") == "1":
+        persona = "character"
+    return configured(pack, persona)
+
+
 def assigned(pack):
-    return {p: resolve(pack, p) for p in ("player", "character", "companion")}
+    """What each slot is set to, for the picker."""
+    return {p: configured(pack, p) for p in ("player", "character", "companion")}
 
 
 def assign(pack, persona, voice_id):

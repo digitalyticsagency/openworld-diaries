@@ -58,6 +58,8 @@ class PackTests(unittest.TestCase):
 class VoiceTests(unittest.TestCase):
     def setUp(self):
         db.run("DELETE FROM settings WHERE key LIKE 'voice:%'")
+        db.put("one_voice", "0")   # these tests are about each persona having its own voice
+        self.addCleanup(lambda: db.put("one_voice", "1"))
 
     def test_precedence_user_choice_then_pack_default_then_env(self):
         self.assertEqual(voices.resolve("horror", "player"), "ENV_PLAYER")
