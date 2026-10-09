@@ -5,16 +5,16 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from . import db, evolve, google_auth, pipeline, sources
+from . import db, evolve, google_auth, pipeline, sources, styles, voices
 from .config import POLL_SECONDS
 
 STATIC = Path(__file__).parent / "static"
 _watcher = {"thread": None}
 _busy = threading.Lock()
-WORKING = {"downloading", "listening", "watching", "writing", "voicing", "uploading"}
+WORKING = {"downloading", "detecting", "listening", "watching", "writing", "voicing", "uploading"}
 
 
 def watched_folders():
@@ -106,6 +106,8 @@ class Settings(BaseModel):
     story_point: str | None = None
     voice_notes: str | None = None
     youtube_publish: bool | None = None
+    ask_style: bool | None = None
+    personality: str | None = None
     learn: bool | None = None
     amount: int | None = None
 
@@ -113,6 +115,26 @@ class Settings(BaseModel):
 class Regen(BaseModel):
     amount: int | None = None
     persona: str | None = None
+    pack: str | None = None
+    personality: str | None = None
+    game: str | None = None
+
+
+class Start(BaseModel):
+    pack: str
+    personality: str = "balanced"
+    game: str | None = None
+
+
+class Assign(BaseModel):
+    pack: str
+    persona: str
+    voice_id: str
+
+
+class Preview(BaseModel):
+    voice_id: str
+    text: str = "Easy now. We are nearly there."
 
 
 class LineEdit(BaseModel):
@@ -141,10 +163,13 @@ def state():
         "channels": google_auth.channels(),
         "active_channel": db.get("active_channel"),
         "youtube_publish": pipeline.youtube_on(),
+        "ask_style": db.get("ask_style", "1") == "1",
+        "personality": styles.personality_id(db.get("personality")),
+        **styles.catalog(),
         "amount": pipeline.amount(),
         "learn": db.get("learn", "1") == "1",
         "videos": [{**v, "has_video": pipeline.final_path(v["id"]).exists()} for v in db.rows(
-            "SELECT id,name,status,error,self_score,combined_score,yt_video_id "
+            "SELECT id,name,status,error,self_score,combined_score,yt_video_id,pack,personality,game,suggestion "
             "FROM videos ORDER BY id DESC LIMIT 50")],
         "memory": db.rows("SELECT id,kind,text,count FROM memory ORDER BY count DESC, updated DESC LIMIT 40"),
         "ratings": db.one("SELECT COALESCE(SUM(thumb=1),0) up, COALESCE(SUM(thumb=-1),0) down FROM lines"),
@@ -190,7 +215,11 @@ def settings(s: Settings):
     for k, v in s.model_dump(exclude_none=True).items():
         if k == "folder_id":
             v = sources.normalize(v)
-        elif k in ("youtube_publish", "learn"):
+        elif k == "pack":
+            v = styles.pack_id(v)
+        elif k == "personality":
+            v = styles.personality_id(v)
+        elif k in ("youtube_publish", "learn", "ask_style"):
             v = "1" if v else "0"
         elif k == "amount":
             v = max(1, min(10, v))
@@ -252,8 +281,48 @@ def regenerate(vid: int, r: Regen):
     if not (pipeline.workdir(vid) / "scenes.json").exists():
         raise HTTPException(400, "The saved scan is missing; use Retry to process it again.")
     pipeline.set_status(vid, "writing")
-    run_bg(pipeline.regenerate, vid, r.amount, r.persona)
+    run_bg(pipeline.regenerate, vid, r.amount, r.persona, r.pack, r.personality, r.game)
     return {"ok": True}
+
+
+@app.post("/api/videos/{vid}/start")
+def start_video(vid: int, s: Start):
+    v = idle_video(vid)
+    if v["status"] != "choose_style":
+        raise HTTPException(400, "This video is not waiting for a style.")
+    pipeline.start(vid, s.pack, s.personality, s.game)
+    pipeline.set_status(vid, "queued")
+    run_bg(pipeline.process, vid)
+    return {"ok": True}
+
+
+@app.get("/api/voices")
+def list_voices():
+    try:
+        return voices.list_voices()
+    except Exception as e:
+        raise HTTPException(502, f"Could not read ElevenLabs voices: {e}")
+
+
+@app.get("/api/voices/assigned")
+def assigned(pack: str):
+    return voices.assigned(pack)
+
+
+@app.post("/api/voices/assign")
+def assign_voice(a: Assign):
+    if a.persona not in ("player", "character", "companion"):
+        raise HTTPException(400, "persona must be player, character or companion")
+    voices.assign(a.pack, a.persona, a.voice_id)
+    return {"ok": True}
+
+
+@app.post("/api/voices/preview")
+def preview_voice(p: Preview):
+    try:
+        return Response(voices.preview(p.voice_id, p.text), media_type="audio/mpeg")
+    except Exception as e:
+        raise HTTPException(502, f"Preview failed: {e}")
 
 
 @app.post("/api/videos/{vid}/rerender")

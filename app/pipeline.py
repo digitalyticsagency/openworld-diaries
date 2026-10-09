@@ -3,7 +3,7 @@ import shutil
 import traceback
 from pathlib import Path
 
-from . import db, evolve, guard, memory, publisher, scenes, sources, transcript, voice, writer
+from . import db, detect, evolve, guard, memory, publisher, scenes, sources, styles, transcript, voice, writer
 from .config import DATA
 
 
@@ -11,6 +11,22 @@ def options():
     return {k: db.get(k, d) for k, d in [
         ("game", "Red Dead Redemption 2"), ("persona", "mixed"), ("character", ""),
         ("story_point", ""), ("voice_notes", "")]}
+
+
+def video_opts(v):
+    """Global options, overridden by what was chosen for this particular video."""
+    o = options()
+    if v.get("game"):
+        o["game"] = v["game"]
+    o["pack"] = styles.pack_id(v.get("pack"))
+    o["personality"] = styles.personality_id(v.get("personality") or db.get("personality"))
+    return o
+
+
+def start(vid, pack, personality, game):
+    """The user confirmed (or changed) the style: save it and let processing continue."""
+    db.run("UPDATE videos SET pack=?, personality=?, game=? WHERE id=?",
+           (styles.pack_id(pack), styles.personality_id(personality), (game or "").strip() or None, vid))
 
 
 def amount():
@@ -70,6 +86,19 @@ def process(vid):
         if not src.exists():
             set_status(vid, "downloading")
             sources.fetch(fid, src)
+        if not v["pack"]:
+            if not v["suggestion"]:
+                set_status(vid, "detecting")
+                sug = detect.detect(src, work)
+                db.run("UPDATE videos SET suggestion=?, game=COALESCE(game, ?) WHERE id=?",
+                       (json.dumps(sug), None if sug["game"] == "unknown" else sug["game"], vid))
+                v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
+            if db.get("ask_style", "1") == "1":
+                set_status(vid, "choose_style")
+                return
+            sug = json.loads(v["suggestion"])
+            start(vid, sug["pack"], db.get("personality"), v["game"])
+            v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
         if not (work / "transcript.json").exists():
             set_status(vid, "listening")
             folder = str(Path(fid).parent) if sources.local_file(fid) else db.get("folder_id")
@@ -84,20 +113,24 @@ def process(vid):
             (work / "transcript.json").write_text(json.dumps(segs, indent=2))
         if not (work / "scenes.json").exists():
             set_status(vid, "watching")
-            scenes.analyze(src, work, options()["game"])
+            o = video_opts(v)
+            scenes.analyze(src, work, o["game"], styles.PACKS[o["pack"]]["hints"])
             shutil.rmtree(work / "frames", ignore_errors=True)
         _generate(vid)
     _guarded(vid, run)
 
 
-def _generate(vid, amt=None, persona=None):
+def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=None):
+    if pack or personality or game:
+        cur = db.one("SELECT * FROM videos WHERE id=?", (vid,))
+        start(vid, pack or cur["pack"], personality or cur["personality"], game or cur["game"])
     v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
     work = workdir(vid)
     src = work / "source.mp4"
     notes, segs = _load(vid)
     windows = guard.speech_windows(segs)
     length = scenes.video_length(src)
-    opts = options()
+    opts = video_opts(v)
     if persona:
         opts["persona"] = persona
     amt = int(amt or amount())
@@ -111,7 +144,7 @@ def _generate(vid, amt=None, persona=None):
     (work / "dropped.json").write_text(json.dumps(dropped, indent=2))
 
     set_status(vid, "voicing")
-    clips = voice.make_clips(lines, windows, system, work)
+    clips = voice.make_clips(lines, windows, system, work, pack=opts["pack"])
     voice.mix(src, clips, final_path(vid))
 
     db.run("DELETE FROM lines WHERE video_id=?", (vid,))
@@ -132,9 +165,9 @@ def _generate(vid, amt=None, persona=None):
         _publish(vid)
 
 
-def regenerate(vid, amt=None, persona=None):
+def regenerate(vid, amt=None, persona=None, pack=None, personality=None, game=None):
     """New commentary from the saved scan: no Gemini calls, no re-download."""
-    _guarded(vid, lambda: _generate(vid, amt, persona))
+    _guarded(vid, lambda: _generate(vid, amt, persona, pack, personality, game))
 
 
 def rerender(vid):
@@ -152,8 +185,9 @@ def rerender(vid):
                           "emotion": r["emotion"], "line": r["line"],
                           "max_duration": max(1.0, min(room, nxt, 20.0))})
         set_status(vid, "voicing")
-        system = writer.build_system(_style(v)["text"], options())
-        clips = voice.make_clips(lines, windows, system, workdir(vid))
+        opts = video_opts(v)
+        system = writer.build_system(_style(v)["text"], opts)
+        clips = voice.make_clips(lines, windows, system, workdir(vid), pack=opts["pack"])
         voice.mix(workdir(vid) / "source.mp4", clips, final_path(vid))
         for ln in lines:
             db.run("UPDATE lines SET line=?, dropped=? WHERE id=?",
@@ -171,7 +205,7 @@ def _publish(vid):
         raise ValueError("Connect a YouTube channel first.")
     set_status(vid, "uploading")
     yt_id = publisher.upload_private(final_path(vid), _title(v),
-                                     f"Inner-voice commentary over {options()['game']} gameplay.", channel)
+                                     f"Inner-voice commentary over {video_opts(v)['game']} gameplay.", channel)
     db.run("UPDATE videos SET yt_video_id=?, channel_id=? WHERE id=?", (yt_id, channel, vid))
     set_status(vid, "awaiting_approval")
 

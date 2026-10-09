@@ -23,6 +23,10 @@ TONE BLEND (per line, never all at once)
 
 {STYLE}
 
+{GENRE_PACK}
+
+{PERSONALITY}
+
 OUTPUT SCHEMA
 [
   {

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import requests
 
-from . import guard
+from . import guard, voices
 from .config import ELEVEN_MODEL, MAX_WORDS, WORDS_PER_SEC
 from .llm import claude
 
@@ -33,15 +33,15 @@ def duration(path):
     return float(r.stdout.strip())
 
 
-def make_clips(lines, windows, system, work):
+def make_clips(lines, windows, system, work, pack=None):
     """Render each line. Real audio length is re-checked against the speech windows."""
     cdir = Path(work) / "clips"
     cdir.mkdir(exist_ok=True)
     clips = []
     for n, ln in enumerate(lines):
-        voice = os.environ.get(f"ELEVEN_VOICE_{ln['persona'].upper()}")
+        voice = voices.resolve(pack, ln["persona"])
         if not voice:
-            raise RuntimeError(f"Set ELEVEN_VOICE_{ln['persona'].upper()} in .env")
+            raise RuntimeError(f"No voice set for {ln['persona']}. Choose one in the app or set ELEVEN_VOICE_{ln['persona'].upper()} in .env")
         path = cdir / f"c_{n:03d}.mp3"
         tts(ln["line"], voice, ln.get("emotion"), path)
         d = duration(path)

@@ -1,6 +1,6 @@
 import json
 
-from . import guard
+from . import guard, styles
 from .config import PROMPTS, WINDOW_SECONDS
 from .llm import claude, parse_json
 
@@ -14,7 +14,10 @@ PERSONA_RULE = {
 
 def build_system(style, opts):
     tpl = (PROMPTS / "master.md").read_text()
+    pack_text, personality_text = styles.pack_prompt(opts.get("pack"), opts.get("personality"))
     return (tpl.replace("{GUARDRAILS}", (PROMPTS / "guardrails.md").read_text())
+            .replace("{GENRE_PACK}", pack_text)
+            .replace("{PERSONALITY}", personality_text)
             .replace("{STYLE}", style)
             .replace("{PERSONA_MODE_RULE}", PERSONA_RULE.get(opts["persona"], PERSONA_RULE["mixed"]))
             .replace("{GAME}", opts["game"])

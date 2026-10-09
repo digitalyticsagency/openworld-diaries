@@ -69,6 +69,10 @@
   .mem { display:flex; justify-content:space-between; gap:8px; padding:6px 0; border-top:1px solid var(--line); font-size:16px; }
   .mem:first-of-type { border-top:0; }
   .tools { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:8px 0; }
+  .s.primary { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  .choose { margin-top:10px; padding:12px; border:1px dashed var(--accent); border-radius:10px; }
+  .vrow { display:grid; grid-template-columns:90px 1fr auto; gap:8px; align-items:center; margin:8px 0; }
+  .vrow select { width:100%; }
 </style>
 </head>
 <body>
@@ -125,8 +129,22 @@
     <div class="presets" role="group" aria-label="Commentary presets">
       <button class="s" data-preset="2">Sparse</button><button class="s" data-preset="5">Balanced</button><button class="s" data-preset="9">Chatty</button>
     </div>
+    <div class="row">
+      <div><label for="personality">Default personality (layered on top of the genre style)</label><select id="personality"></select></div>
+    </div>
+    <label class="sw" style="margin-top:14px"><input type="checkbox" id="ask" role="switch"><span><strong>Ask me to confirm the style for each new video</strong><br><span class="small">The app detects the game from a few frames, then waits for your OK before the paid scan starts.</span></span></label>
     <label class="sw" style="margin-top:14px"><input type="checkbox" id="learn" role="switch"><span><strong>Learn my playstyle across videos</strong><br><span class="small">Remembers habits, places and running jokes so later videos feel continuous. See and delete it below.</span></span></label>
     <p><button class="s" id="save">Save voice settings</button></p>
+  </section>
+
+  <section>
+    <h2>Voices per genre style</h2>
+    <label for="vpack">Genre style</label>
+    <select id="vpack"></select>
+    <div class="vrow"><span>Player</span><select id="v_player" data-vp="player"></select><button class="s" data-vprev="player">Preview</button></div>
+    <div class="vrow"><span>Character</span><select id="v_character" data-vp="character"></select><button class="s" data-vprev="character">Preview</button></div>
+    <div class="vrow"><span>Companion</span><select id="v_companion" data-vp="companion"></select><button class="s" data-vprev="companion">Preview</button></div>
+    <p class="small">Changes save instantly and apply to the next video or regenerate in this style. Preview plays a short sample and uses a few ElevenLabs credits.</p>
   </section>
 
   <section>
@@ -160,7 +178,7 @@ const OPEN = new Set();
 let ready = false, lastSig = '';
 const LPM = [0.5,0.8,1.2,1.6,2,2.5,3,3.5,4.2,5];
 const LEVEL = n => (n<=3 ? 'Sparse' : n<=6 ? 'Balanced' : 'Chatty') + ` · about ${LPM[n-1]} lines a minute`;
-const WORKING = ['downloading','listening','watching','writing','voicing','uploading','queued'];
+const WORKING = ['downloading','detecting','listening','watching','writing','voicing','uploading','queued'];
 const REGEN = {};
 const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const mmss = t => Math.floor(t/60) + ':' + String(Math.floor(t%60)).padStart(2,'0');
@@ -170,18 +188,40 @@ function setAmount(n) {
   document.querySelectorAll('[data-preset]').forEach(b => b.classList.toggle('on', +b.dataset.preset === +n));
 }
 
+let CAT = {packs: [], personalities: []}, PERSONALITY = 'balanced', VOICES = [];
+const CHOOSE = {};
+const opt = (list, sel) => list.map(x => `<option value="${x.id}" ${x.id===sel?'selected':''}>${esc(x.name)}</option>`).join('');
+const packName = id => (CAT.packs.find(p => p.id === id) || {}).name || 'Western outlaw';
+const persName = id => (CAT.personalities.find(p => p.id === id) || {}).name || 'Balanced';
+
+function chooser(v) {
+  let sug = {}; try { sug = JSON.parse(v.suggestion || '{}'); } catch (_) {}
+  const c = CHOOSE[v.id] ||= { pack: sug.pack || 'western', personality: PERSONALITY,
+    game: v.game || (sug.game && sug.game !== 'unknown' ? sug.game : '') };
+  return `<div class="choose"><div class="small">Detected: <strong>${esc(sug.game || 'unknown')}</strong>${sug.confidence != null ? ` (${Math.round(sug.confidence*100)}% sure)` : ''}. ${esc(sug.reason || '')}</div>
+    <div class="row"><div><label>Game</label><input data-ch="${v.id}:game" value="${esc(c.game)}"></div>
+    <div><label>Genre style</label><select data-ch="${v.id}:pack">${opt(CAT.packs, c.pack)}</select></div>
+    <div><label>Personality</label><select data-ch="${v.id}:personality">${opt(CAT.personalities, c.personality)}</select></div></div>
+    <div class="acts"><button class="s primary" data-startstyle="${v.id}">Start commentary</button><span class="small">The paid scan only begins when you press this.</span></div></div>`;
+}
+
 function card(v) {
   const busy = WORKING.includes(v.status);
-  const label = v.status.replace('_',' ');
   const cls = busy ? 'working' : v.status;
-  const r = REGEN[v.id] ?? '';
-  return `<div class="vid"><div class="vt"><strong>${esc(v.name)}</strong><span class="pill ${cls}">${label}</span></div>
-    ${v.error ? `<div class="small" style="color:var(--bad)">${esc(v.error)}</div>` : ''}
+  const head = `<div class="vt"><strong>${esc(v.name)}</strong><span class="pill ${cls}">${v.status.replace('_',' ')}</span></div>` +
+    (v.error ? `<div class="small" style="color:var(--bad)">${esc(v.error)}</div>` : '');
+  if (v.status === 'choose_style')
+    return `<div class="vid">${head}${chooser(v)}<div class="acts"><button class="s danger" data-del="${v.id}">Delete</button></div></div>`;
+  const r = REGEN[v.id] || {};
+  const style = v.pack ? `<span class="small">${esc(packName(v.pack))} · ${esc(persName(v.personality))}${v.game ? ' · ' + esc(v.game) : ''}</span>` : '';
+  return `<div class="vid">${head}${style}
     <div class="acts">
       ${v.has_video && !busy ? `<a class="s" href="/api/videos/${v.id}/download" download>Download video</a>` : ''}
       <button class="s" data-lines="${v.id}">Lines</button>
-      ${!busy && v.has_video ? `<select data-regsel="${v.id}" aria-label="Commentary amount for regenerate">
-          <option value="">Same amount</option><option value="2" ${r==='2'?'selected':''}>Sparse</option><option value="5" ${r==='5'?'selected':''}>Balanced</option><option value="9" ${r==='9'?'selected':''}>Chatty</option></select>
+      ${!busy && v.has_video ? `
+        <select data-regsel="${v.id}:amount" aria-label="Commentary amount"><option value="">Same amount</option><option value="2" ${r.amount==='2'?'selected':''}>Sparse</option><option value="5" ${r.amount==='5'?'selected':''}>Balanced</option><option value="9" ${r.amount==='9'?'selected':''}>Chatty</option></select>
+        <select data-regsel="${v.id}:pack" aria-label="Genre style"><option value="">Same style</option>${opt(CAT.packs, r.pack)}</select>
+        <select data-regsel="${v.id}:personality" aria-label="Personality"><option value="">Same personality</option>${opt(CAT.personalities, r.personality)}</select>
         <button class="s" data-regen="${v.id}">Regenerate</button>` : ''}
       ${v.status==='ready' ? `<button class="s" data-publish="${v.id}">Upload to YouTube (private)</button>` : ''}
       ${v.status==='awaiting_approval' ? `<a class="s" href="https://youtu.be/${v.yt_video_id}" target="_blank" rel="noopener">Open on YouTube</a><button class="s" data-approve="${v.id}">Make public</button>` : ''}
@@ -190,6 +230,15 @@ function card(v) {
       ${!busy ? `<button class="s danger" data-del="${v.id}">Delete</button>` : ''}
       <span class="small">${v.combined_score!=null ? 'score ' + v.combined_score.toFixed(1) : ''}</span>
     </div><div id="l${v.id}"></div></div>`;
+}
+
+async function loadVoices() {
+  if (!VOICES.length) { try { VOICES = await api('voices'); } catch (e) { say(e.message, true); return; } }
+  const a = await api('voices/assigned?pack=' + $('vpack').value);
+  for (const p of ['player','character','companion']) {
+    const list = VOICES.some(v => v.id === a[p]) ? VOICES : [{ id: a[p], name: 'Current voice' }, ...VOICES];
+    $('v_' + p).innerHTML = opt(list, a[p]);
+  }
 }
 
 async function load() {
@@ -201,8 +250,12 @@ async function load() {
     ready = true;
     $('folder').value = s.folder_id;
     for (const k of ['game','persona','character','story_point','voice_notes']) $(k).value = s.options[k] || '';
-    setAmount(s.amount); $('yt').checked = s.youtube_publish; $('learn').checked = s.learn;
+    CAT = { packs: s.packs, personalities: s.personalities }; PERSONALITY = s.personality;
+    $('personality').innerHTML = opt(CAT.personalities, s.personality);
+    $('vpack').innerHTML = opt(CAT.packs, 'western'); loadVoices();
+    setAmount(s.amount); $('yt').checked = s.youtube_publish; $('learn').checked = s.learn; $('ask').checked = s.ask_style;
   }
+  PERSONALITY = s.personality;
   const sig = JSON.stringify([s.videos, s.channels, s.active_channel, s.memory, s.prompts, s.ratings]);
   if (sig === lastSig) return;
   lastSig = sig;
@@ -250,6 +303,9 @@ $('save').onclick = async () => {
 $('yt').onchange = async () => { await api('settings', { youtube_publish: $('yt').checked });
   say($('yt').checked ? 'New videos will be uploaded to YouTube as private.' : 'Videos stay on this Mac. Use Download.'); };
 $('learn').onchange = async () => { await api('settings', { learn: $('learn').checked }); say('Saved.'); };
+$('ask').onchange = async () => { await api('settings', { ask_style: $('ask').checked }); say($('ask').checked ? 'New videos will wait for your style choice.' : 'New videos will start with the detected style.'); };
+$('personality').onchange = async () => { await api('settings', { personality: $('personality').value }); say('Default personality saved.'); };
+$('vpack').onchange = loadVoices;
 $('amount').oninput = () => setAmount(+$('amount').value);
 $('amount').onchange = async () => { await api('settings', { amount: +$('amount').value }); say('Commentary amount saved. It applies to new videos and regenerates.'); };
 $('evolve').onclick = async () => { say('Running...'); try { const r = await api('evolve/run', {}); say(`Done: ${JSON.stringify(r)}`); } catch (e) { say(e.message, true); } lastSig=''; load(); };
@@ -258,7 +314,9 @@ const refresh = () => { lastSig = ''; return load(); };
 document.addEventListener('change', async e => {
   const d = e.target.dataset;
   try {
-    if (d.regsel) REGEN[d.regsel] = e.target.value;
+    if (d.regsel) { const [id, f] = d.regsel.split(':'); (REGEN[id] ||= {})[f] = e.target.value; }
+    if (d.ch) { const [id, f] = d.ch.split(':'); (CHOOSE[id] ||= {})[f] = e.target.value; }
+    if (d.vp) { await api('voices/assign', { pack: $('vpack').value, persona: d.vp, voice_id: e.target.value }); say('Voice saved for this style.'); }
     if (d.edit) { await fetch('/api/lines/' + d.edit, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ line: e.target.value }) })
         .then(async r => { if (!r.ok) throw new Error((await r.json()).detail); }); say('Line saved. Press "Re-render video" to hear it.'); }
   } catch (err) { say(err.message, true); }
@@ -270,7 +328,11 @@ document.addEventListener('click', async e => {
     if (d.lines) { const id = +d.lines; OPEN.has(id) ? OPEN.delete(id) : OPEN.add(id); if (OPEN.has(id)) showLines(id); else $('l'+id).innerHTML=''; }
     if (d.approve && confirm('Make this video public on YouTube?')) { await api(`videos/${d.approve}/approve`, {}); say('Published.'); await refresh(); }
     if (d.retry) { await api(`videos/${d.retry}/retry`, {}); await refresh(); }
-    if (d.regen) { const a = REGEN[d.regen]; await api(`videos/${d.regen}/regenerate`, a ? { amount: +a } : {}); say('Regenerating the commentary from the saved scan...'); await refresh(); }
+    if (d.regen) { const r = REGEN[d.regen] || {}, b = {}; if (r.amount) b.amount = +r.amount; if (r.pack) b.pack = r.pack; if (r.personality) b.personality = r.personality;
+      await api(`videos/${d.regen}/regenerate`, b); say('Regenerating the commentary from the saved scan...'); await refresh(); }
+    if (d.startstyle) { const c = CHOOSE[d.startstyle]; await api(`videos/${d.startstyle}/start`, { pack: c.pack, personality: c.personality, game: c.game }); delete CHOOSE[d.startstyle]; say('Started.'); await refresh(); }
+    if (d.vprev) { const id = $('v_' + d.vprev).value; say('Playing a sample...'); const r = await fetch('/api/voices/preview', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ voice_id: id }) });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Preview failed'); new Audio(URL.createObjectURL(await r.blob())).play(); say(''); }
     if (d.rerender) { await api(`videos/${d.rerender}/rerender`, {}); say('Re-rendering with your edits...'); await refresh(); }
     if (d.publish) { await api(`videos/${d.publish}/publish`, {}); say('Uploading to YouTube as private...'); await refresh(); }
     if (d.del && confirm('Delete this video and its commentary from the app? The original file is not touched.')) { await del('videos/' + d.del); OPEN.delete(+d.del); await refresh(); }

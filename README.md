@@ -28,6 +28,9 @@ Drive folder ──► download ──► transcript (who speaks, when) ──�
 - **Commentary amount:** a 1 to 10 slider (Sparse, Balanced, Chatty presets). It sets the minimum gap between lines and a target number of lines per minute. Each video can override it with **Regenerate**.
 - **Regenerate and edit:** Regenerate writes new commentary from the saved scan, with no new Gemini cost. In **Lines** you can edit or remove any line, then **Re-render video**.
 - **Consequences and morality:** the voice can refer back to earlier events and react to choices such as honor changes, but code rejects any reference to something that did not happen on screen.
+- **10 genre styles and 6 personalities:** Western outlaw, Crime city, Survival horror, Fantasy RPG, Shooter and battle royale, Racing, Sports broadcast, Sandbox survival, Sci-fi space, and Cozy and indie. Each style sets the vocabulary, what to react to, the tone, and default voices. A personality (Balanced, Sarcastic, Poetic, Hype, Wholesome, Deadpan) is layered on top. Neither can weaken the hard guardrails.
+- **Game detection:** when a new video arrives the app looks at four frames, guesses the game and the matching style, then waits for you to confirm or change it before the paid scan starts. Turn the confirmation off to start with the detected style straight away.
+- **Voices per style:** pick the player, character and companion voices for each genre style from your ElevenLabs account, with a Preview button. Your own voice is the default player voice everywhere.
 - **Memory:** it remembers your playstyle across videos (habits, places, running jokes). You can see and **Forget** any entry, or turn learning off.
 
 ## Self-improvement

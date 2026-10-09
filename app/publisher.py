@@ -23,3 +23,9 @@ def make_public(video_id, channel_id):
     yt = service("youtube", "v3", channel_id)
     yt.videos().update(part="status", body={"id": video_id, "status": {
         "privacyStatus": "public", "selfDeclaredMadeForKids": False}}).execute()
+
+
+def make_private(video_id, channel_id):
+    yt = service("youtube", "v3", channel_id)
+    yt.videos().update(part="status", body={"id": video_id, "status": {
+        "privacyStatus": "private", "selfDeclaredMadeForKids": False}}).execute()

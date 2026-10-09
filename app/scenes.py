@@ -22,14 +22,14 @@ def extract_frames(video, work):
     return [(i * FRAME_EVERY, f) for i, f in enumerate(sorted(fdir.glob("f_*.jpg")))]
 
 
-def analyze(video, work, game):
+def analyze(video, work, game, hints=""):
     tpl = (PROMPTS / "scene.md").read_text()
     frames = extract_frames(video, work)
     notes = []
     for i in range(0, len(frames), FRAME_BATCH):
         chunk = frames[i:i + FRAME_BATCH]
         parts = [(f.read_bytes(), "image/jpeg") for _, f in chunk]
-        parts.append(tpl.format(game=game, times=[t for t, _ in chunk]))
+        parts.append(tpl.format(game=game, hints=hints or "anything the player touches, gains, loses or decides", times=[t for t, _ in chunk]))
         batch = gemini_json(parts)
         for (t, _), n in zip(chunk, batch):  # trust our timestamps, not the model's
             n["t"] = t
