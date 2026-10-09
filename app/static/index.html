@@ -174,6 +174,21 @@
     <fieldset class="grp"><legend>Captions burned into the video</legend>
       <label class="sw"><input type="checkbox" id="cap_com" role="switch"><span><strong>The commentary</strong><br><span class="small">Every spoken line is shown as text. While characters are talking, the inner voice appears as a silent on-screen thought instead, so it never talks over speech.</span></span></label>
       <label class="sw"><input type="checkbox" id="cap_dlg" role="switch"><span><strong>What characters and the player say</strong><br><span class="small">Subtitles for the in-game dialogue, from the transcript.</span></span></label>
+      <div class="row">
+        <div><label for="cs_d">Dialogue style</label><select id="cs_d" data-cap="cap_style_dialogue"></select></div>
+        <div><label for="cp_d">Dialogue position</label><select id="cp_d" data-cap="cap_pos_dialogue"></select></div>
+      </div>
+      <div class="row">
+        <div><label for="cs_c">Commentary style</label><select id="cs_c" data-cap="cap_style_commentary"></select></div>
+        <div><label for="cp_c">Commentary position</label><select id="cp_c" data-cap="cap_pos_commentary"></select></div>
+      </div>
+      <div class="row">
+        <div><label for="csize">Text size</label><select id="csize" data-cap="cap_size"></select></div>
+        <div><label for="cprevkind">Preview shows</label><select id="cprevkind"><option value="voiced">A spoken line</option><option value="silent">A silent thought</option></select></div>
+      </div>
+      <div class="small" id="capnote" style="margin-top:8px"></div>
+      <div id="capprevbox" class="small" style="margin-top:8px">Loading the preview...</div>
+      <p class="small">Changes save instantly and apply to new videos. On a finished video press <strong>Redo captions</strong> (fast, no new speech). If both tracks share a position, the commentary sits just toward the middle of the screen so they never overlap.</p>
     </fieldset>
     <label class="sw" style="margin-top:14px"><input type="checkbox" id="ab" role="switch"><span><strong>Let the brain test slightly different eagerness (A/B)</strong><br><span class="small">Off: your slider is obeyed exactly. On: about 1 video in 4 runs a little more or less eager, to learn what you prefer.</span></span></label>
     <label class="sw" style="margin-top:14px"><input type="checkbox" id="learn" role="switch"><span><strong>Learn my playstyle across videos</strong><br><span class="small">Remembers habits, places and running jokes so later videos feel continuous. See and delete it below.</span></span></label>
@@ -250,6 +265,33 @@ function setAmount(n) {
 }
 
 let ONEVOICE = true;
+let CAPSET = null;
+function fillCaptions(s) {
+  const fill = (id, list, val) => { $(id).innerHTML = list.map(x => `<option value="${x.id}" ${x.id === val ? 'selected' : ''}>${esc(x.name)}</option>`).join(''); };
+  CAPSET = s;
+  fill('cs_d', s.cap_styles, s.cap_cfg.dialogue.style); fill('cs_c', s.cap_styles, s.cap_cfg.commentary.style);
+  fill('cp_d', s.cap_positions, s.cap_cfg.dialogue.pos); fill('cp_c', s.cap_positions, s.cap_cfg.commentary.pos);
+  fill('csize', s.cap_sizes, s.cap_cfg.size);
+  capNote(); refreshPreview();
+}
+function capNote() {
+  if (!CAPSET) return;
+  const n = id => (CAPSET.cap_styles.find(x => x.id === id) || {}).note || '';
+  $('capnote').innerHTML = `<strong>Dialogue:</strong> ${esc(n($('cs_d').value))}<br><strong>Commentary:</strong> ${esc(n($('cs_c').value))}`;
+}
+let prevTimer = null;
+function refreshPreview() {
+  clearTimeout(prevTimer);
+  prevTimer = setTimeout(() => {
+    // the picture is only added once it has loaded, so a failure shows words, never a broken-image box
+    const box = $('capprevbox'), img = new Image();
+    img.alt = 'Preview of the caption style on a video frame';
+    img.style.cssText = 'width:100%;border-radius:10px;display:block';
+    img.onload = () => { box.replaceChildren(img); };
+    img.onerror = () => { box.textContent = 'The preview could not be drawn. The settings are still saved.'; };
+    img.src = '/api/captions/preview?second=' + $('cprevkind').value + '&t=' + Date.now();
+  }, 120);
+}
 function markOneVoice() { for (const p of ['player', 'companion']) { const sel = $('v_' + p); if (sel) sel.disabled = ONEVOICE; sel && (sel.title = ONEVOICE ? 'Not used while one consistent voice is on' : ''); } }
 let CAT = {packs: [], personalities: []}, PERSONALITY = 'balanced', VOICES = [], VIDEOS = [];
 const vname = id => (VOICES.find(v => v.id === id) || {}).name || 'a voice';
@@ -313,7 +355,8 @@ function card(v) {
         <select data-regsel="${v.id}:pack" aria-label="Genre style"><option value="">Same style</option>${opt(CAT.packs, r.pack)}</select>
         <select data-regsel="${v.id}:personality" aria-label="Personality"><option value="">Same personality</option>${opt(CAT.personalities, r.personality)}</select>
         <button class="s" data-regen="${v.id}" title="Write new commentary with the settings next to it">Regenerate commentary</button>
-        <button class="s" data-rerender="${v.id}" title="Re-voice and re-mix the current lines into a fresh video, with the game audio and music kept">Rebuild video</button>` : ''}
+        <button class="s" data-rerender="${v.id}" title="Re-voice and re-mix the current lines into a fresh video, with the game audio and music kept">Rebuild video</button>
+        <button class="s" data-recap="${v.id}" title="Draw the captions again in the chosen look, keeping the same lines and the same voice clips">Redo captions</button>` : ''}
       ${v.status==='ready' ? `<button class="s" data-publish="${v.id}">Upload to YouTube (private)</button>` : ''}
       ${v.status==='awaiting_approval' ? `<a class="s" href="https://youtu.be/${v.yt_video_id}" target="_blank" rel="noopener">Open on YouTube</a><button class="s" data-approve="${v.id}">Make public</button>` : ''}
       ${v.status==='published' ? `<a class="s" href="https://youtu.be/${v.yt_video_id}" target="_blank" rel="noopener">Open on YouTube</a>` : ''}
@@ -354,7 +397,7 @@ async function load() {
     CAT = { packs: s.packs, personalities: s.personalities }; PERSONALITY = s.personality;
     $('personality').innerHTML = opt(CAT.personalities, s.personality);
     $('vpack').innerHTML = opt(CAT.packs, 'western'); loadVoices();
-    setAmount(s.amount); $('yt').checked = s.youtube_publish; $('learn').checked = s.learn; $('ask').checked = s.ask_style; $('ab').checked = s.ab_test; $('cutq').checked = s.cutscene_quiet; $('onev').checked = s.one_voice; ONEVOICE = s.one_voice; markOneVoice(); $('cap_com').checked = s.cap_commentary; $('cap_dlg').checked = s.cap_dialogue;
+    setAmount(s.amount); $('yt').checked = s.youtube_publish; $('learn').checked = s.learn; $('ask').checked = s.ask_style; $('ab').checked = s.ab_test; fillCaptions(s); $('cutq').checked = s.cutscene_quiet; $('onev').checked = s.one_voice; ONEVOICE = s.one_voice; markOneVoice(); $('cap_com').checked = s.cap_commentary; $('cap_dlg').checked = s.cap_dialogue;
     $('amt_manual').checked = s.target_lpm > 0; $('amt_auto').checked = !(s.target_lpm > 0); if (s.target_lpm > 0) $('lpm').value = s.target_lpm; $('lpm').disabled = !(s.target_lpm > 0);
   }
   VIDEOS = s.videos; PERSONALITY = s.personality; CLOCK = s.server_time - Date.now()/1000;
@@ -441,6 +484,10 @@ const saveAmtMode = async () => { const manual = $('amt_manual').checked; $('lpm
 $('amt_auto').onchange = saveAmtMode; $('amt_manual').onchange = saveAmtMode; $('lpm').onchange = saveAmtMode;
 $('onev').onchange = async () => { await api('settings', { one_voice: $('onev').checked }); ONEVOICE = $('onev').checked; markOneVoice();
   say($('onev').checked ? 'One consistent voice. Rebuild a video to hear it.' : 'Voices alternate between the three personas again. Regenerate commentary to apply.'); lastSig = ''; load(); };
+document.querySelectorAll('[data-cap]').forEach(el => el.onchange = async () => {
+  try { await api('settings', { [el.dataset.cap]: el.value }); capNote(); refreshPreview(); say('Caption look saved. New videos use it; press Redo captions on a finished one.'); }
+  catch (e) { say(e.message, true); } });
+$('cprevkind').onchange = refreshPreview;
 $('cutq').onchange = async () => { await api('settings', { cutscene_quiet: $('cutq').checked }); say($('cutq').checked ? 'Cutscenes are kept silent and caption-free for new and rebuilt videos.' : 'Cutscenes are no longer treated specially.'); };
 $('cap_com').onchange = async () => { await api('settings', { cap_commentary: $('cap_com').checked }); say($('cap_com').checked ? 'Commentary captions and silent thoughts are on for new and rebuilt videos.' : 'Commentary captions are off.'); };
 $('cap_dlg').onchange = async () => { await api('settings', { cap_dialogue: $('cap_dlg').checked }); say($('cap_dlg').checked ? 'Dialogue subtitles are on for new and rebuilt videos.' : 'Dialogue subtitles are off.'); };
@@ -484,6 +531,7 @@ document.addEventListener('click', async e => {
       if (!(b > a)) throw new Error('Type a start and an end such as 1:05 and 2:30.'); await api(`videos/${id}/cutscenes/add`, { start: a, end: b }); await showCuts(id); lastSig = ''; load(); }
     if (d.cutreset) { await api(`videos/${d.cutreset}/cutscenes/reset`, {}); await showCuts(d.cutreset); lastSig = ''; load(); }
     if (d.cutredo) { await api(`videos/${d.cutredo}/cutscenes/redetect`, {}); say('Looking at the video again...'); await refresh(); }
+    if (d.recap) { await api(`videos/${d.recap}/recaption`, {}); say('Redrawing the captions in the chosen look...'); await refresh(); }
     if (d.vprev) { const id = $('v_' + d.vprev).value; say('Playing a sample...'); const r = await fetch('/api/voices/preview', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ voice_id: id }) });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Preview failed'); new Audio(URL.createObjectURL(await r.blob())).play(); say(''); }
     if (d.rerender) { await api(`videos/${d.rerender}/rerender`, {}); say('Re-rendering with your edits...'); await refresh(); }

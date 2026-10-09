@@ -33,6 +33,17 @@ Drive folder ──► download ──► transcript (who speaks, when) ──�
 - **Voices per style:** pick the player, character and companion voices for each genre style from your ElevenLabs account, with a Preview button. Your own voice is the default player voice everywhere.
 - **Memory:** it remembers your playstyle across videos (habits, places, running jokes). You can see and **Forget** any entry, or turn learning off.
 
+## Caption looks
+
+Dialogue subtitles and the inner voice each have their own style and position, chosen in Voice with a live preview on a frame of your own video.
+
+- **Styles:** Cinematic (white serif, soft outline and shadow, no box, like the game's own subtitles, the default), Classic box, Clean outline, Pop, Minimal, Storybook, Typewriter.
+- **Position:** Top, Upper third, Middle, Lower third or Bottom, separately for each track. If both are set to the same place, the commentary moves just toward the middle of the screen so the two never overlap.
+- **Size:** Small, Medium or Large.
+- **Silent thoughts** are always shown in italics inside quotation marks, whatever the style.
+- A finished video's **Redo captions** button redraws the captions in the current look using the same lines and voice clips (no new speech, so it is cheaper and quicker than Rebuild video).
+- If the game footage already shows its own subtitles at the bottom, set the dialogue captions to a different position or switch them off to avoid doubled text.
+
 ## Sound
 
 - **The audio always runs the whole video.** The voice track is padded to full length and the result follows the game audio, and every finished video is checked: if its sound ends earlier than its picture, it is reported as failed instead of being delivered.

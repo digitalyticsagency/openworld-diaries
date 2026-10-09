@@ -49,6 +49,14 @@ def final_path(vid):
     return workdir(vid) / "final.mp4"
 
 
+def caption_cfg():
+    """The caption look chosen in Voice settings."""
+    return captions.clean_cfg({
+        "dialogue": {"style": db.get("cap_style_dialogue"), "pos": db.get("cap_pos_dialogue")},
+        "commentary": {"style": db.get("cap_style_commentary"), "pos": db.get("cap_pos_commentary")},
+        "size": db.get("cap_size")})
+
+
 def one_voice():
     """One consistent voice for all commentary (the Character voice). On by default."""
     return db.get("one_voice", "1") == "1"
@@ -134,7 +142,7 @@ def _finish(vid, lines, clips, segs, src, blocks=None):
     secs = {round(s, 2): d for s, _, d in clips}
     com = captions.commentary_items(lines, secs) if cap_commentary() else []
     dlg = captions.dialogue_items(segs, blocks) if cap_dialogue() else []
-    captions.burn(mixed, final_path(vid), dlg, com, work, progress=progress_cb(vid, "Captions"))
+    captions.burn(mixed, final_path(vid), dlg, com, work, progress=progress_cb(vid, "Captions"), cfg=caption_cfg())
     mixed.unlink(missing_ok=True)
     voice.verify_av(final_path(vid))
 
@@ -347,6 +355,28 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
         traceback.print_exc()  # learning must never break a finished video
     if youtube_on() and db.get("active_channel"):
         _publish(vid)
+
+
+def recaption(vid):
+    """New caption look on the same lines and the same voice clips: no new speech is made."""
+    def run():
+        v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
+        notes, segs = _load(vid)
+        work = workdir(vid)
+        rows = db.rows("SELECT * FROM lines WHERE video_id=? ORDER BY start", (vid,))
+        voiced = [r for r in rows if not r["dropped"] and not r["silent"]]
+        files = sorted((work / "clips").glob("c_*.mp3"))
+        if len(files) != len(voiced):
+            raise ValueError("The saved voice clips do not match the lines, so use Rebuild video instead.")
+        clips = [(r["start"], f, voice.duration(f)) for r, f in zip(voiced, files)]
+        lines = [{"start": r["start"], "line": r["line"], "persona": r["persona"], "silent": bool(r["silent"]),
+                  "dropped": bool(r["dropped"]), "max_duration": r["max_duration"]} for r in rows]
+        cuts = active_cuts(cut_state(vid))
+        blocks = cutscenes.padded(cuts) if cuts else []
+        set_status(vid, "voicing")
+        _finish(vid, lines, clips, segs, work / "source.mp4", blocks)
+        set_status(vid, "ready")
+    _guarded(vid, run)
 
 
 def regenerate(vid, amt=None, persona=None, pack=None, personality=None, game=None):

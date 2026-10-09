@@ -1,4 +1,6 @@
 import asyncio
+import io
+import subprocess
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -8,7 +10,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from . import cutscenes, db, envfile, evolve, google_auth, pipeline, sources, styles, voices
+from . import captions, cutscenes, db, envfile, evolve, google_auth, pipeline, sources, styles, voices
 from .config import POLL_SECONDS
 
 STATIC = Path(__file__).parent / "static"
@@ -109,6 +111,11 @@ class Settings(BaseModel):
     ask_style: bool | None = None
     ab_test: bool | None = None
     one_voice: bool | None = None
+    cap_style_dialogue: str | None = None
+    cap_style_commentary: str | None = None
+    cap_pos_dialogue: str | None = None
+    cap_pos_commentary: str | None = None
+    cap_size: str | None = None
     cutscene_quiet: bool | None = None
     cap_commentary: bool | None = None
     cap_dialogue: bool | None = None
@@ -188,6 +195,8 @@ def state():
         "ab_test": db.get("ab_test", "0") == "1",
         "cutscene_quiet": pipeline.cutscene_quiet(),
         "one_voice": pipeline.one_voice(),
+        "cap_cfg": pipeline.caption_cfg(),
+        **captions.catalog(),
         "cap_commentary": pipeline.cap_commentary(),
         "cap_dialogue": pipeline.cap_dialogue(),
         "target_lpm": pipeline.target_lpm() or 0,
@@ -256,6 +265,15 @@ def settings(s: Settings):
             v = "1" if v else "0"
         elif k == "amount":
             v = max(1, min(10, v))
+        elif k in ("cap_style_dialogue", "cap_style_commentary"):
+            if v not in captions.STYLES:
+                raise HTTPException(400, "Unknown caption style.")
+        elif k in ("cap_pos_dialogue", "cap_pos_commentary"):
+            if v not in captions.POSITIONS:
+                raise HTTPException(400, "Unknown caption position.")
+        elif k == "cap_size":
+            if v not in captions.SIZES:
+                raise HTTPException(400, "Unknown caption size.")
         elif k == "target_lpm":
             v = "" if v <= 0 else min(12.0, v)   # 0 means automatic: the emotion beats decide
         db.put(k, v)
@@ -470,6 +488,42 @@ def preview_voice(p: Preview):
         return Response(voices.preview(p.voice_id, p.text), media_type="audio/mpeg")
     except Exception as e:
         raise HTTPException(502, f"Preview failed: {e}")
+
+
+@app.post("/api/videos/{vid}/recaption")
+def recaption(vid: int):
+    idle_video(vid)
+    if not pipeline.final_path(vid).exists():
+        raise HTTPException(400, "Make the video first.")
+    pipeline.set_status(vid, "voicing")
+    run_bg(pipeline.recaption, vid)
+    return {"ok": True}
+
+
+@app.get("/api/captions/preview")
+def caption_preview(ds: str = "", dp: str = "", cs: str = "", cp: str = "", size: str = "", second: str = "voiced"):
+    """A still frame with sample captions in the chosen look. Unspecified values fall back to the saved settings."""
+    saved = pipeline.caption_cfg()
+    cfg = captions.clean_cfg({"dialogue": {"style": ds or saved["dialogue"]["style"], "pos": dp or saved["dialogue"]["pos"]},
+                              "commentary": {"style": cs or saved["commentary"]["style"], "pos": cp or saved["commentary"]["pos"]},
+                              "size": size or saved["size"]})
+    base = _preview_frame()
+    buf = io.BytesIO()
+    captions.preview(base, cfg, second).save(buf, "JPEG", quality=88)
+    return Response(buf.getvalue(), media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+def _preview_frame():
+    """A frame from the newest video on this Mac, so the preview looks like the real thing."""
+    from PIL import Image
+    for v in db.rows("SELECT id FROM videos ORDER BY id DESC"):
+        src = pipeline.workdir(v["id"]) / "source.mp4"
+        if src.exists():
+            r = subprocess.run(["ffmpeg", "-v", "error", "-ss", "40", "-i", str(src), "-frames:v", "1", "-f", "image2pipe",
+                                "-vcodec", "png", "-"], capture_output=True)
+            if r.returncode == 0 and r.stdout:
+                return Image.open(io.BytesIO(r.stdout))
+    return Image.new("RGB", (1280, 720), (38, 52, 46))
 
 
 @app.post("/api/videos/{vid}/rerender")
