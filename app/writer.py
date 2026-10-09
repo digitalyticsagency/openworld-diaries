@@ -77,6 +77,27 @@ def _ask(system, opps, scenes, segments, windows, kept, profile, lo, hi, note=""
     return _lines_from(parse_json(claude(system, json.dumps(user))), by_id)
 
 
+def _shorten(system, dropped, opps_by_id):
+    """A line that was only too long is not lost: ask for the same thought in fewer words."""
+    items = [{"opportunity": d["opp_id"], "max_words": d["max_words"], "line": d["line"]}
+             for d in dropped if d.get("reason") == "too long" and d.get("opp_id") in opps_by_id]
+    if not items:
+        return []
+    try:
+        raw = parse_json(claude(system, "Each line below is over its word limit. Rewrite each as the same thought in at most "
+                                        "max_words words. Return JSON [{\"opportunity\": id, \"line\": text}] only.\n"
+                                        + json.dumps(items), 1500))
+    except Exception:
+        return []
+    by_old = {d["opp_id"]: d for d in dropped if d.get("opp_id")}
+    out = []
+    for r in raw if isinstance(raw, list) else []:
+        old = by_old.get(r.get("opportunity"))
+        if old and (r.get("line") or "").strip():
+            out.append({k: v for k, v in old.items() if k != "reason"} | {"line": r["line"].strip()})
+    return out
+
+
 def write_lines(scenes, segments, windows, system, video_len, opps, profile=None, progress=None):
     """One line per chosen opportunity at most. Returns (kept, dropped)."""
     total_windows = max(1, int(-(-video_len // WINDOW_SECONDS)))
@@ -88,6 +109,10 @@ def write_lines(scenes, segments, windows, system, video_len, opps, profile=None
         if sel:
             new = _ask(system, sel, scenes, segments, windows, kept, profile, lo, min(hi, video_len))
             k, d = guard.enforce(kept[-1:] + new if kept else new, windows, scenes, min_gap=MIN_GAP_FLOOR)
+            fixed = _shorten(system, d, {o["id"]: o for o in sel})
+            if fixed:
+                k, d2 = guard.enforce(k + fixed, windows, scenes, min_gap=MIN_GAP_FLOOR)
+                d = [x for x in d if x.get("reason") != "too long"] + d2
             kept += [x for x in k if x["start"] >= lo]
             dropped += [x for x in d if x["start"] >= lo]
         lo = hi
@@ -96,7 +121,7 @@ def write_lines(scenes, segments, windows, system, video_len, opps, profile=None
     return kept, dropped
 
 
-def fill_missed(scenes, segments, windows, system, kept, opps, profile=None, min_salience=7.0, limit=6):
+def fill_missed(scenes, segments, windows, system, kept, opps, profile=None, min_salience=0.0, limit=12):
     """Self-check: strong moments the first pass left without a line get one more chance."""
     done = {k.get("opp_id") for k in kept}
     missed = sorted((o for o in opps if o["id"] not in done and o["salience"] >= min_salience),
@@ -105,6 +130,6 @@ def fill_missed(scenes, segments, windows, system, kept, opps, profile=None, min
         return kept, 0
     new = _ask(system, sorted(missed, key=lambda o: o["t"]), scenes, segments, windows, kept, profile,
                missed[0]["t"] - 1, max(o["t"] for o in missed) + 1,
-               note="These strong moments were left without a line. Write one for each unless it truly cannot be done honestly.")
+               note="These planned moments were left without a line. Write one short line for each of them now. Do not skip any.")
     merged, _ = guard.enforce(kept + new, windows, scenes, min_gap=MIN_GAP_FLOOR)
     return merged, len(merged) - len(kept)

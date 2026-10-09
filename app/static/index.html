@@ -78,6 +78,17 @@
   #live .step { font-weight:600; }
   .timer { font-variant-numeric:tabular-nums; color:var(--accent); font-weight:600; }
   .prog { font-size:13px; color:var(--mute); margin-top:4px; }
+  details.keys { margin-top:20px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:0 16px; }
+  details.keys summary { cursor:pointer; padding:14px 0; font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--mute); }
+  details.keys[open] summary { border-bottom:1px solid var(--line); margin-bottom:8px; }
+  .key { padding:10px 0; border-top:1px solid var(--line); }
+  .key:first-of-type { border-top:0; }
+  .key .top { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; align-items:baseline; }
+  .key .ok { color:var(--ok); font-size:13px; } .key .no { color:var(--bad); font-size:13px; }
+  .key .ctl { display:flex; gap:8px; margin-top:6px; flex-wrap:wrap; }
+  .key .ctl input { flex:1 1 220px; }
+  .key .res { font-size:13px; margin-top:4px; }
+  .warn { margin-top:8px; padding:10px 12px; border:1px dashed var(--bad); border-radius:10px; font-size:13px; }
 </style>
 </head>
 <body>
@@ -91,6 +102,12 @@
   </div>
 
   <div id="live" role="status" aria-live="polite" hidden></div>
+
+  <details class="keys" id="keysbox">
+    <summary>API keys and models</summary>
+    <p class="small">Saved to the private <code>.env</code> file on this Mac and used immediately. A saved key is never shown again, only its last four characters. Test makes one tiny real call.</p>
+    <div id="keys"></div>
+  </details>
 
   <section>
     <h2>Upload from this Mac</h2>
@@ -140,6 +157,7 @@
       <div><label for="personality">Default personality (layered on top of the genre style)</label><select id="personality"></select></div>
     </div>
     <label class="sw" style="margin-top:14px"><input type="checkbox" id="ask" role="switch"><span><strong>Ask me to confirm the style for each new video</strong><br><span class="small">The app detects the game from a few frames, then waits for your OK before the paid scan starts.</span></span></label>
+    <label class="sw" style="margin-top:14px"><input type="checkbox" id="ab" role="switch"><span><strong>Let the brain test slightly different eagerness (A/B)</strong><br><span class="small">Off: your slider is obeyed exactly. On: about 1 video in 4 runs a little more or less eager, to learn what you prefer.</span></span></label>
     <label class="sw" style="margin-top:14px"><input type="checkbox" id="learn" role="switch"><span><strong>Learn my playstyle across videos</strong><br><span class="small">Remembers habits, places and running jokes so later videos feel continuous. See and delete it below.</span></span></label>
     <p><button class="s" id="save">Save voice settings</button></p>
   </section>
@@ -151,7 +169,8 @@
     <div class="vrow"><span>Player</span><select id="v_player" data-vp="player"></select><button class="s" data-vprev="player">Preview</button></div>
     <div class="vrow"><span>Character</span><select id="v_character" data-vp="character"></select><button class="s" data-vprev="character">Preview</button></div>
     <div class="vrow"><span>Companion</span><select id="v_companion" data-vp="companion"></select><button class="s" data-vprev="companion">Preview</button></div>
-    <p class="small">Changes save instantly and apply to the next video or regenerate in this style. Preview plays a short sample and uses a few ElevenLabs credits.</p>
+    <p class="small">Changes save instantly. They apply to videos made with this style from now on, and to existing ones when you press Rebuild video. Preview plays a short sample and uses a few ElevenLabs credits.</p>
+    <div id="vusers" class="small"></div>
   </section>
 
   <section>
@@ -211,7 +230,8 @@ function setAmount(n) {
   document.querySelectorAll('[data-preset]').forEach(b => b.classList.toggle('on', +b.dataset.preset === +n));
 }
 
-let CAT = {packs: [], personalities: []}, PERSONALITY = 'balanced', VOICES = [];
+let CAT = {packs: [], personalities: []}, PERSONALITY = 'balanced', VOICES = [], VIDEOS = [];
+const vname = id => (VOICES.find(v => v.id === id) || {}).name || 'a voice';
 const CHOOSE = {};
 const opt = (list, sel) => list.map(x => `<option value="${x.id}" ${x.id===sel?'selected':''}>${esc(x.name)}</option>`).join('');
 const packName = id => (CAT.packs.find(p => p.id === id) || {}).name || 'Western outlaw';
@@ -228,11 +248,24 @@ function chooser(v) {
     <div class="acts"><button class="s primary" data-startstyle="${v.id}">Start commentary</button><span class="small">The paid scan only begins when you press this.</span></div></div>`;
 }
 
+function voicesLine(v) {
+  if (!v.has_video || !v.voices) return '';
+  const p = v.voices, pk = v.pack || 'western';
+  return `<div class="prog">Voices (${esc(packName(pk))} style): Player <strong>${esc(vname(p.player))}</strong> · Character <strong>${esc(vname(p.character))}</strong> · Companion <strong>${esc(vname(p.companion))}</strong>
+    <button class="s" data-changevoices="${pk}">Change voices</button></div>`;
+}
+
+function styleHint(v) {
+  if (!v.known_pack || !v.pack || v.known_pack === v.pack || !v.has_video || BUSYLIKE.includes(v.status)) return '';
+  return `<div class="warn">${esc(v.game)} normally uses the <strong>${esc(packName(v.known_pack))}</strong> style, but this video was made with <strong>${esc(packName(v.pack))}</strong>.
+    <button class="s primary" data-fixstyle="${v.id}:${v.known_pack}">Regenerate as ${esc(packName(v.known_pack))}</button></div>`;
+}
+
 function brainLine(v) {
   if (!v.stats || BUSYLIKE.includes(v.status)) return '';
   let st = {}; try { st = JSON.parse(v.stats); } catch (_) { return ''; }
   const r = v.density_rating;
-  return `<div class="prog">Found ${st.beats} emotional moments · ${st.gaps} usable gaps between speech (${st.micro_gaps} short) · ${st.planned} planned · ${st.lines} spoken${st.filled ? ` (${st.filled} added by the self-check)` : ''}${st.blocked_by_speech ? ` · ${st.blocked_by_speech} landed in speech` : ''} · eagerness ${st.eagerness}${st.arm && st.arm.startsWith('m') || st.arm === 'less' ? ' (testing)' : ''}</div>
+  return `<div class="prog">Found ${st.beats} emotional moments · ${st.gaps} usable gaps between speech (${st.micro_gaps} short) · ${st.planned} planned · ${st.lines} spoken${st.filled ? ` (${st.filled} added by the self-check)` : ''}${st.lines < st.planned ? ` (${st.planned - st.lines} could not be written to fit)` : ''}${st.blocked_by_speech ? ` · ${st.blocked_by_speech} landed in speech` : ''} · eagerness ${st.eagerness}${st.slider != null ? ` (your slider ${st.slider}${st.learned ? `, learned ${st.learned > 0 ? '+' : ''}${st.learned}` : ''}${st.arm === 'more' || st.arm === 'less' ? `, A/B test ${st.arm}` : ''})` : ''}</div>
     <div class="acts"><span class="small">How was the amount of commentary?</span>
       <button class="s ${r===-1?'primary':''}" data-dens="${v.id}:-1">Too quiet</button>
       <button class="s ${r===0?'primary':''}" data-dens="${v.id}:0">Just right</button>
@@ -265,7 +298,14 @@ function card(v) {
       ${v.status==='failed' ? `<button class="s" data-retry="${v.id}">Retry</button>` : ''}
       ${!busy ? `<button class="s danger" data-del="${v.id}">Delete</button>` : ''}
       <span class="small">${v.combined_score!=null ? 'score ' + v.combined_score.toFixed(1) : ''}</span>
-    </div>${brainLine(v)}<div id="l${v.id}"></div></div>`;
+    </div>${styleHint(v)}${voicesLine(v)}${brainLine(v)}<div id="l${v.id}"></div></div>`;
+}
+
+function renderVusers() {
+  const pk = $('vpack').value, mine = VIDEOS.filter(v => v.pack === pk && v.has_video && !BUSYLIKE.includes(v.status));
+  $('vusers').innerHTML = mine.length
+    ? 'Videos using this style: ' + mine.map(v => `<div class="acts"><span>${esc(v.name.length > 60 ? v.name.slice(0, 57) + '...' : v.name)}</span><button class="s" data-rerender="${v.id}">Rebuild with these voices</button></div>`).join('')
+    : 'No finished video uses this style yet. Pick the style in a video\'s Regenerate menu to try it.';
 }
 
 async function loadVoices() {
@@ -275,6 +315,8 @@ async function loadVoices() {
     const list = VOICES.some(v => v.id === a[p]) ? VOICES : [{ id: a[p], name: 'Current voice' }, ...VOICES];
     $('v_' + p).innerHTML = opt(list, a[p]);
   }
+  renderVusers();
+  lastSig = ''; load();
 }
 
 async function load() {
@@ -289,9 +331,9 @@ async function load() {
     CAT = { packs: s.packs, personalities: s.personalities }; PERSONALITY = s.personality;
     $('personality').innerHTML = opt(CAT.personalities, s.personality);
     $('vpack').innerHTML = opt(CAT.packs, 'western'); loadVoices();
-    setAmount(s.amount); $('yt').checked = s.youtube_publish; $('learn').checked = s.learn; $('ask').checked = s.ask_style;
+    setAmount(s.amount); $('yt').checked = s.youtube_publish; $('learn').checked = s.learn; $('ask').checked = s.ask_style; $('ab').checked = s.ab_test;
   }
-  PERSONALITY = s.personality; CLOCK = s.server_time - Date.now()/1000;
+  VIDEOS = s.videos; PERSONALITY = s.personality; CLOCK = s.server_time - Date.now()/1000;
   const work = s.videos.filter(v => WORKING.includes(v.status)), waiting = s.videos.filter(v => v.status === 'queued');
   const live = $('live');
   if (work.length) {
@@ -354,6 +396,7 @@ $('save').onclick = async () => {
 };
 $('yt').onchange = async () => { await api('settings', { youtube_publish: $('yt').checked });
   say($('yt').checked ? 'New videos will be uploaded to YouTube as private.' : 'Videos stay on this Mac. Use Download.'); };
+$('ab').onchange = async () => { await api('settings', { ab_test: $('ab').checked }); say($('ab').checked ? 'A/B testing is on.' : 'A/B testing is off: the slider is obeyed exactly.'); };
 $('learn').onchange = async () => { await api('settings', { learn: $('learn').checked }); say('Saved.'); };
 $('ask').onchange = async () => { await api('settings', { ask_style: $('ask').checked }); say($('ask').checked ? 'New videos will wait for your style choice.' : 'New videos will start with the detected style.'); };
 $('personality').onchange = async () => { await api('settings', { personality: $('personality').value }); say('Default personality saved.'); };
@@ -368,7 +411,7 @@ document.addEventListener('change', async e => {
   try {
     if (d.regsel) { const [id, f] = d.regsel.split(':'); (REGEN[id] ||= {})[f] = e.target.value; }
     if (d.ch) { const [id, f] = d.ch.split(':'); (CHOOSE[id] ||= {})[f] = e.target.value; }
-    if (d.vp) { await api('voices/assign', { pack: $('vpack').value, persona: d.vp, voice_id: e.target.value }); say('Voice saved for this style.'); }
+    if (d.vp) { await api('voices/assign', { pack: $('vpack').value, persona: d.vp, voice_id: e.target.value }); say('Voice saved for this style. Press Rebuild video on a video to hear it.'); lastSig = ''; load(); }
     if (d.edit) { await fetch('/api/lines/' + d.edit, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ line: e.target.value }) })
         .then(async r => { if (!r.ok) throw new Error((await r.json()).detail); }); say('Line saved. Press "Re-render video" to hear it.'); }
   } catch (err) { say(err.message, true); }
@@ -384,6 +427,8 @@ document.addEventListener('click', async e => {
       await api(`videos/${d.regen}/regenerate`, b); say('Regenerating the commentary from the saved scan...'); await refresh(); }
     if (d.startstyle) { const c = CHOOSE[d.startstyle]; await api(`videos/${d.startstyle}/start`, { pack: c.pack, personality: c.personality, game: c.game }); delete CHOOSE[d.startstyle]; say('Started.'); await refresh(); }
     if (d.dens) { const [id, val] = d.dens.split(':'); await api(`videos/${id}/density`, { value: +val }); say('Thanks. The brain adjusts how eager it is for this genre style.'); await refresh(); }
+    if (d.changevoices) { $('vpack').value = d.changevoices; await loadVoices(); $('vpack').scrollIntoView({ behavior: 'smooth', block: 'center' }); say('Choose the voices for this style, then press Rebuild video.'); }
+    if (d.fixstyle) { const [id, pk] = d.fixstyle.split(':'); await api(`videos/${id}/regenerate`, { pack: pk }); say('Regenerating in the right style...'); await refresh(); }
     if (d.vprev) { const id = $('v_' + d.vprev).value; say('Playing a sample...'); const r = await fetch('/api/voices/preview', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ voice_id: id }) });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Preview failed'); new Audio(URL.createObjectURL(await r.blob())).play(); say(''); }
     if (d.rerender) { await api(`videos/${d.rerender}/rerender`, {}); say('Re-rendering with your edits...'); await refresh(); }
@@ -394,6 +439,28 @@ document.addEventListener('click', async e => {
     if (d.thumb) { const [id, v] = d.thumb.split(':'); await api(`lines/${id}/thumb`, { value: +v }); for (const o of OPEN) showLines(o); }
   } catch (err) { say(err.message, true); }
 });
+async function loadKeys() {
+  const ks = await api('keys');
+  $('keys').innerHTML = ks.map(k => `<div class="key" data-keyrow="${k.name}">
+    <div class="top"><strong>${esc(k.label)}</strong>${k.secret
+      ? (k.set ? `<span class="ok">Set ${esc(k.hint)}</span>` : '<span class="no">Not set</span>') : '<span class="small">model name</span>'}</div>
+    <div class="small">${esc(k.help)}</div>
+    <div class="ctl"><input ${k.secret ? 'type="password" autocomplete="off" placeholder="' + (k.set ? 'Paste a new key to replace it' : 'Paste the key here') + '"' : 'type="text" value="' + esc(k.value) + '"'} data-keyinput="${k.name}">
+      <button class="s" data-keysave="${k.name}">Save</button><button class="s" data-keytest="${k.name}">Test</button>${k.secret && k.set ? `<button class="s danger" data-keyclear="${k.name}">Remove</button>` : ''}</div>
+    <div class="res" id="res_${k.name}"></div></div>`).join('');
+}
+const keyBox = n => document.querySelector(`[data-keyinput="${n}"]`);
+const keyRes = (n, text, ok) => { const r = $('res_' + n); r.textContent = text; r.style.color = ok ? 'var(--ok)' : 'var(--bad)'; };
+document.addEventListener('click', async e => {
+  const d = e.target.dataset;
+  try {
+    if (d.keysave) { const el = keyBox(d.keysave); if (!el.value.trim()) return keyRes(d.keysave, 'Type or paste a value first.', false);
+      await api('keys/' + d.keysave, { value: el.value }); await loadKeys(); keyRes(d.keysave, 'Saved. Press Test to check it.', true); lastSig = ''; }
+    if (d.keytest) { keyRes(d.keytest, 'Testing...', true); const r = await api('keys/' + d.keytest + '/test', {}); keyRes(d.keytest, r.message, r.ok); }
+    if (d.keyclear && confirm('Remove this key from the app?')) { await del('keys/' + d.keyclear); await loadKeys(); }
+  } catch (err) { if (d.keysave || d.keytest || d.keyclear) keyRes(d.keysave || d.keytest || d.keyclear, err.message, false); else throw err; }
+});
+loadKeys();
 function sendFile(f) {
   const row = document.createElement('div'); row.className = 'up';
   row.innerHTML = `<span class="nm">${esc(f.name)}</span><progress max="1" value="0"></progress><span class="st small">0%</span>`;

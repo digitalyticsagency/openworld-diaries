@@ -69,7 +69,7 @@ def find_beats(scenes, kw=None):
     return beats
 
 
-def opportunities(beats, gaps, length):
+def opportunities(beats, gaps, length, eager=6.0):
     """Turn beats into places a line can actually go, plus atmosphere spots in long silences."""
     opps, blocked = [], []
     for i, b in enumerate(beats):
@@ -86,11 +86,12 @@ def opportunities(beats, gaps, length):
         opps.append({"id": f"b{i}", "t": round(start, 2), "beat_t": b["t"], "salience": b["salience"],
                      "kinds": b["kinds"], "why": b["why"], "max_words": mw, "max_duration": round(cap, 2),
                      "kind": "micro" if mw < 9 else "full"})
+    step = max(14.0, min(45.0, 70.0 - 6.0 * eager))   # more eager: atmosphere spots come closer together
     for j, g in enumerate(gaps):
         span = g["end"] - g["start"]
-        if span < 20:
+        if span < (20 if eager < 8.5 else 8):          # at high eagerness even short gaps may host a line
             continue
-        n = max(1, int(span // 35))
+        n = max(1, int(span // step))
         for k in range(n):
             pos = g["start"] + (k + 1) * span / (n + 1)
             cap = min(g["end"] - pos - TAIL, 12.0)

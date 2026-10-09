@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from . import db, evolve, google_auth, pipeline, sources, styles, voices
+from . import db, envfile, evolve, google_auth, pipeline, sources, styles, voices
 from .config import POLL_SECONDS
 
 STATIC = Path(__file__).parent / "static"
@@ -107,6 +107,7 @@ class Settings(BaseModel):
     voice_notes: str | None = None
     youtube_publish: bool | None = None
     ask_style: bool | None = None
+    ab_test: bool | None = None
     personality: str | None = None
     learn: bool | None = None
     amount: int | None = None
@@ -118,6 +119,10 @@ class Regen(BaseModel):
     pack: str | None = None
     personality: str | None = None
     game: str | None = None
+
+
+class KeyValue(BaseModel):
+    value: str
 
 
 class Density(BaseModel):
@@ -155,7 +160,8 @@ class Thumb(BaseModel):
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC / "index.html")
+    # never let the browser keep an old copy of the page after the app is updated
+    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/state")
@@ -169,11 +175,13 @@ def state():
         "server_time": time.time(),
         "youtube_publish": pipeline.youtube_on(),
         "ask_style": db.get("ask_style", "1") == "1",
+        "ab_test": db.get("ab_test", "0") == "1",
         "personality": styles.personality_id(db.get("personality")),
         **styles.catalog(),
         "amount": pipeline.amount(),
         "learn": db.get("learn", "1") == "1",
-        "videos": [{**v, "has_video": pipeline.final_path(v["id"]).exists()} for v in db.rows(
+        "videos": [{**v, "has_video": pipeline.final_path(v["id"]).exists(),
+                    "voices": voices.assigned(v["pack"]), "known_pack": styles.pack_for_game(v["game"])} for v in db.rows(
             "SELECT id,name,status,error,self_score,combined_score,yt_video_id,pack,personality,game,suggestion,"
             "status_at,started_at,progress,density_rating,stats,arm "
             "FROM videos ORDER BY id DESC LIMIT 50")],
@@ -227,7 +235,7 @@ def settings(s: Settings):
             v = styles.pack_id(v)
         elif k == "personality":
             v = styles.personality_id(v)
-        elif k in ("youtube_publish", "learn", "ask_style"):
+        elif k in ("youtube_publish", "learn", "ask_style", "ab_test"):
             v = "1" if v else "0"
         elif k == "amount":
             v = max(1, min(10, v))
@@ -291,6 +299,48 @@ def regenerate(vid: int, r: Regen):
     pipeline.set_status(vid, "writing")
     run_bg(pipeline.regenerate, vid, r.amount, r.persona, r.pack, r.personality, r.game)
     return {"ok": True}
+
+
+def local_only(request: Request):
+    """Key settings are only for this page: refuse requests that another website could send."""
+    origin = request.headers.get("origin")
+    if origin and origin not in ("http://localhost:8000", "http://127.0.0.1:8000"):
+        raise HTTPException(403, "Only the app's own page can change keys.")
+
+
+@app.get("/api/keys")
+def keys_status():
+    return envfile.status()
+
+
+@app.post("/api/keys/{name}")
+def keys_save(name: str, k: KeyValue, request: Request):
+    local_only(request)
+    if name not in envfile.KEYS:
+        raise HTTPException(404, "Unknown setting.")
+    try:
+        envfile.set_value(name, k.value)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.delete("/api/keys/{name}")
+def keys_clear(name: str, request: Request):
+    local_only(request)
+    if name not in envfile.KEYS:
+        raise HTTPException(404, "Unknown setting.")
+    envfile.clear(name)
+    return {"ok": True}
+
+
+@app.post("/api/keys/{name}/test")
+def keys_test(name: str, request: Request):
+    local_only(request)
+    if name not in envfile.KEYS:
+        raise HTTPException(404, "Unknown setting.")
+    ok, message = envfile.test(name)
+    return {"ok": ok, "message": message}
 
 
 @app.post("/api/videos/{vid}/density")

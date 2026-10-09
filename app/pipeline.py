@@ -202,9 +202,9 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     set_status(vid, "writing")
     all_beats = beats.find_beats(notes, evolve.kind_weights())
     free = gaps.free_gaps(windows, length)
-    opps, blocked = beats.opportunities(all_beats, free, length)
     arm, offset = evolve.choose_arm(explicit)
     eager = amt + evolve.density_bias(opts["pack"]) + offset
+    opps, blocked = beats.opportunities(all_beats, free, length, eager)
     chosen, _ = beats.select(opps, eager, length)
     db.run("UPDATE videos SET arm=? WHERE id=?", (arm, vid))
 
@@ -217,7 +217,8 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     db.run("UPDATE videos SET stats=? WHERE id=?", (json.dumps({
         "beats": len(all_beats), "blocked_by_speech": len(blocked), "gaps": len(free),
         "micro_gaps": sum(1 for g in free if g["kind"] == "micro"), "planned": len(chosen),
-        "lines": len(lines), "filled": filled, "eagerness": round(eager, 1), "arm": arm}), vid))
+        "lines": len(lines), "filled": filled, "eagerness": round(eager, 1), "arm": arm,
+        "slider": amt, "learned": round(eager - amt - offset, 1)}), vid))
     (work / "dropped.json").write_text(json.dumps(dropped, indent=2))
 
     set_status(vid, "voicing")

@@ -2,7 +2,6 @@ import json
 import os
 import re
 
-from .config import CLAUDE_MODEL, GEMINI_MODEL
 
 
 _ESCAPE = re.compile(r'(\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))|\\')
@@ -21,7 +20,7 @@ def parse_json(text):
 def claude(system, user, max_tokens=8000):
     import anthropic
     r = anthropic.Anthropic().messages.create(
-        model=CLAUDE_MODEL, max_tokens=max_tokens, system=system,
+        model=os.environ.get("CLAUDE_MODEL", "claude-opus-5-5"), max_tokens=max_tokens, system=system,
         messages=[{"role": "user", "content": user}])
     return "".join(b.text for b in r.content if getattr(b, "type", "") == "text")
 
@@ -36,7 +35,7 @@ def gemini_json(parts):
     last = None
     for _ in range(3):  # the model is not deterministic: ask again if the answer is unreadable
         r = client.models.generate_content(
-            model=GEMINI_MODEL, contents=contents,
+            model=os.environ.get("GEMINI_MODEL", "gemini-3.8-flash"), contents=contents,
             config=types.GenerateContentConfig(response_mime_type="application/json"))
         try:
             return parse_json(r.text or "")

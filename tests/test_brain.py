@@ -132,11 +132,11 @@ class WriterPlanTests(unittest.TestCase):
             asked.update(json.loads(user))
             return json.dumps([{"opportunity": "s1", "persona": "player", "emotion": "calm", "line": "Quiet now."}])
         with mock.patch("app.writer.claude", fake):
-            kept, n = writer.fill_missed(scenes, [], [], "SYS", [], opps)
+            kept, n = writer.fill_missed(scenes, [], [], "SYS", [], opps, min_salience=7.0)
         self.assertEqual([o["id"] for o in asked["opportunities"]], ["s1"])
         self.assertEqual((n, kept[0]["line"], kept[0]["start"]), (1, "Quiet now.", 20))
         with mock.patch("app.writer.claude", side_effect=AssertionError("nothing missed")):
-            self.assertEqual(writer.fill_missed(scenes, [], [], "SYS", kept, opps)[1], 0)
+            self.assertEqual(writer.fill_missed(scenes, [], [], "SYS", kept, opps, min_salience=7.0)[1], 0)
 
     def test_word_limit_comes_from_the_opportunity(self):
         opps = [{"id": "m", "t": 20, "beat_t": None, "salience": 5, "kinds": ["ambient"], "why": "w", "max_words": 4, "max_duration": 3, "kind": "micro"}]
@@ -196,7 +196,11 @@ class LearningTests(unittest.TestCase):
     def test_choose_arm_never_tests_when_user_set_the_amount(self):
         self.assertEqual(evolve.choose_arm(True), ("control", 0.0))
         with mock.patch("app.evolve.random.random", return_value=0.0), mock.patch("app.evolve.random.choice", return_value=("more", 0.8)):
+            db.put("ab_test", "0")
+            self.assertEqual(evolve.choose_arm(False), ("control", 0.0))  # off by default: the slider is obeyed exactly
+            db.put("ab_test", "1")
             self.assertEqual(evolve.choose_arm(False), ("more", 0.8))
+        db.put("ab_test", "0")
 
 
 class StyleFixTests(unittest.TestCase):

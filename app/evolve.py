@@ -178,7 +178,7 @@ def kind_weights():
 
 def choose_arm(explicit):
     """A/B: now and then, try a slightly more or less eager brain. Not when the user set the amount."""
-    if explicit or random.random() >= ARM_SHARE:
+    if explicit or db.get("ab_test", "0") != "1" or random.random() >= ARM_SHARE:
         return "control", 0.0
     return random.choice([("more", ARM_OFFSET), ("less", -ARM_OFFSET)])
 

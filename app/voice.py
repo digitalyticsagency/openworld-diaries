@@ -5,7 +5,7 @@ from pathlib import Path
 import requests
 
 from . import guard, voices
-from .config import ELEVEN_MODEL, MAX_WORDS, WORDS_PER_SEC
+from .config import MAX_WORDS, WORDS_PER_SEC
 from .llm import claude
 
 STRONG = guard.STRONG_EMOTIONS
@@ -21,7 +21,7 @@ def tts(text, voice_id, emotion, out):
     r = requests.post(
         f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
         headers={"xi-api-key": os.environ["ELEVENLABS_API_KEY"]},
-        json={"text": text, "model_id": ELEVEN_MODEL, "voice_settings": _settings(emotion)},
+        json={"text": text, "model_id": os.environ.get("ELEVEN_MODEL", "eleven_multilingual_v2"), "voice_settings": _settings(emotion)},
         timeout=120)
     r.raise_for_status()
     Path(out).write_bytes(r.content)
