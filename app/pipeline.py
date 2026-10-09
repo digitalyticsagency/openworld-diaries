@@ -5,7 +5,8 @@ import time
 import traceback
 from pathlib import Path
 
-from . import beats, captions, cutscenes, db, detect, evolve, gaps, guard, memory, publisher, scenes, sources, styles, transcript, voice, writer
+from . import (beats, captions, channel, cutscenes, db, detect, evolve, gaps, guard, memory, publisher, scenes, sentiment,
+               sources, styles, transcript, voice, writer)
 from .config import DATA, MIN_GAP_FLOOR
 
 
@@ -24,7 +25,17 @@ def video_opts(v):
     if one_voice() and o["persona"] == "mixed":
         o["persona"] = "character"   # one steady first-person voice, not three alternating ones
     o["personality"] = styles.personality_id(v.get("personality") or db.get("personality"))
+    o["knowledge"] = db.get("knowledge_on", "1") == "1"
     return o
+
+
+def moral_mode():
+    """'both': the game's own cues first, then what the scan sees. 'cues': only what the game itself shows."""
+    return "cues" if db.get("moral_mode", "both") == "cues" else "both"
+
+
+def daydream_on():
+    return db.get("daydream", "1") == "1"
 
 
 def start(vid, pack, personality, game):
@@ -119,15 +130,15 @@ def drop_in_blocks(lines, blocks):
     return n
 
 
-def plan_commentary(all_beats, free, windows, length, eager, target, silent_on, extra=()):
+def plan_commentary(all_beats, free, windows, length, eager, target, silent_on, extra=(), quiet_fn=None):
     """Pick what to say and where. With a manual target the possible spots are built at full eagerness, so
     the target can actually be reached; the result also says what the video's room allows at most."""
     supply = max(eager, 15.0) if target else eager
-    opps, blocked = beats.opportunities(all_beats, free, length, supply)
+    opps, blocked = beats.opportunities(all_beats, free, length, supply, quiet_fn)
     opps = sorted(opps + list(extra), key=lambda o: o["t"])
     silent = beats.silent_opportunities(all_beats, windows, length, supply) if silent_on else []
     chosen = beats.plan(opps, silent, eager, length, target)
-    most = beats.plan(*[beats_ for beats_ in (beats.opportunities(all_beats, free, length, 15.0)[0] + list(extra),
+    most = beats.plan(*[beats_ for beats_ in (beats.opportunities(all_beats, free, length, 15.0, quiet_fn)[0] + list(extra),
                                               beats.silent_opportunities(all_beats, windows, length, 15.0) if silent_on else [])],
                       15.0, length, 999)
     return chosen, blocked, round(len(most) / (length / 60.0), 1)
@@ -291,8 +302,9 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     work = workdir(vid)
     src = work / "source.mp4"
     notes, segs = _load(vid)
-    windows = guard.speech_windows(segs)
     length = scenes.video_length(src)
+    segs = transcript.within(segs, length)
+    windows = guard.speech_windows(segs)
     opts = video_opts(v)
     if persona:
         opts["persona"] = persona
@@ -307,14 +319,26 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
 
     # Plan: where can lines go, which moments are worth one, how eager should the brain be
     set_status(vid, "writing")
-    all_beats = [b for b in beats.find_beats(notes, evolve.kind_weights())
-                 if not cutscenes.overlaps(blocks, b["t"], b["t"] + 0.01)]
+    kw = evolve.kind_weights()
+    try:
+        tones = sentiment.ensure(work, segs)           # how other people's words land on Arthur
+    except Exception:
+        tones = []
+    all_beats = sorted(beats.find_beats(notes, kw, moral_mode()) + beats.speech_beats(segs, tones, kw), key=lambda b: b["t"])
+    all_beats = [b for b in all_beats if not cutscenes.overlaps(blocks, b["t"], b["t"] + 0.01)]
     free = gaps.free_gaps(windows, length)
     after = beats.after_cutscene(cuts, free, segs)
+    cfg = channel.settings(db.get)
+    intro = channel.intro_opportunity(free, length, cfg) if cfg["intro_on"] else None
+    outro = channel.outro_opportunity(free, length, cfg, intro) if cfg["outro_on"] else None
+    extra = after + [o for o in (intro, outro) if o]
+    quiet_fn = beats.travel_quiet_fn(notes) if daydream_on() else (lambda t: False)
     arm, offset = evolve.choose_arm(explicit)
     eager = amt + evolve.density_bias(opts["pack"]) + offset
     chosen, blocked, possible = plan_commentary(all_beats, free, cutscenes.subtract_ranges(speech, blocks), length,
-                                                eager, target_lpm(), cap_commentary(), extra=after)
+                                                eager, target_lpm(), cap_commentary(), extra=extra, quiet_fn=quiet_fn)
+    channel.assign_themes(chosen)
+    n_catch = channel.assign_catchphrases(chosen, cfg["phrases"], length, vid) if cfg["catch_on"] else 0
     db.run("UPDATE videos SET arm=? WHERE id=?", (arm, vid))
 
     system = writer.build_system(_style(v)["text"], opts)
@@ -323,6 +347,7 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
                                         progress=progress_cb(vid, "Sections"), blocks=blocks)
     lines, filled = writer.fill_missed(notes, segs, windows, system, lines, chosen, profile=profile, blocks=blocks)
     lines = evolve.refine(lines, notes, windows, system, min_gap=MIN_GAP_FLOOR, blocks=blocks)
+    lines = channel.fix_lines(lines, chosen, cfg)      # the welcome and the like-and-subscribe really say so, once
     db.run("UPDATE videos SET stats=? WHERE id=?", (json.dumps({
         "beats": len(all_beats), "blocked_by_speech": len(blocked), "gaps": len(free),
         "micro_gaps": sum(1 for g in free if g["kind"] == "micro"), "planned": len(chosen),
@@ -330,7 +355,11 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
         "slider": amt, "learned": round(eager - amt - offset, 1),
         "silent": sum(1 for l in lines if l.get("silent")), "target_lpm": target_lpm(),
         "per_minute": round(len(lines) / (length / 60), 1), "possible_per_minute": possible,
-        "cutscenes": len(cuts), "cutscene_seconds": cutscenes.total_seconds(cuts), "reactions": len(after)}), vid))
+        "cutscenes": len(cuts), "cutscene_seconds": cutscenes.total_seconds(cuts), "reactions": len(after),
+        "daydreams": sum(1 for l in lines if "daydream" in (l.get("beat_kinds") or "")),
+        "intro": any(l.get("opp_id") == "intro" for l in lines), "outro": any(l.get("opp_id") == "outro" for l in lines),
+        "catchphrases": n_catch, "speech_reactions": sum(1 for l in lines if "npc_" in (l.get("beat_kinds") or "")),
+        "knowledge": bool(opts.get("knowledge")) and bool(__import__("app.knowledge", fromlist=["x"]).name_for_game(opts["game"]))}), vid))
     (work / "dropped.json").write_text(json.dumps(dropped, indent=2))
 
     set_status(vid, "voicing")

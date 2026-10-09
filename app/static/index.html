@@ -165,6 +165,22 @@
       <label class="rad"><input type="radio" name="amtmode" value="auto" id="amt_auto"> <span><strong>Automatic</strong> · the emotion of each moment decides (the slider above sets how eager)</span></label>
       <label class="rad"><input type="radio" name="amtmode" value="manual" id="amt_manual"> <span><strong>Manual</strong> · aim for <input type="number" id="lpm" min="1" max="12" step="0.5" value="5" style="width:80px;display:inline-block;padding:6px 8px"> lines a minute, spoken lines plus silent thoughts, as far as the video's room allows</span></label>
     </fieldset>
+    <fieldset class="grp"><legend>Pacing and what it reacts to</legend>
+      <label class="sw"><input type="checkbox" id="dayd" role="switch"><span><strong>Wistful daydreams during quiet travel</strong><br><span class="small">Only while walking or riding with nothing to react to: a private thought about a quiet future (a farm, a family someday). Generic, never naming a story character. Everywhere else it stays silent unless something real happens: a shop, an animal, a fight, a choice, or someone speaking to him.</span></span></label>
+      <label class="sw"><input type="checkbox" id="know" role="switch"><span><strong>Use the game's knowledge pack</strong><br><span class="small">For Red Dead: shops, horse and animal care, hunting and predators, honor and conscience, the gang. Used only for what the scene confirms.</span></span></label>
+      <label for="moral" style="margin-top:10px">Telling an innocent casualty from an outlaw getting justice</label>
+      <select id="moral"><option value="both">The game's own cues first, then what the scan sees; unsure stays neutral</option><option value="cues">Only what the game itself shows (honor change, label, bounty); otherwise neutral</option></select>
+    </fieldset>
+    <fieldset class="grp"><legend>Channel lines</legend>
+      <label for="chname">Channel name (optional)</label><input id="chname" placeholder="Open World Diaries">
+      <label class="sw" style="margin-top:10px"><input type="checkbox" id="intro_on" role="switch"><span><strong>A welcome once at the start</strong></span></label>
+      <input id="intro_text" aria-label="Welcome wording">
+      <label class="sw" style="margin-top:10px"><input type="checkbox" id="outro_on" role="switch"><span><strong>Like and subscribe once near the end</strong></span></label>
+      <input id="outro_text" aria-label="Outro wording">
+      <label class="sw" style="margin-top:10px"><input type="checkbox" id="catch_on" role="switch"><span><strong>A few spoken catchphrases, each used once</strong><br><span class="small">One list item per line. About one per four minutes of video, at strong moments.</span></span></label>
+      <textarea id="catchphrases" rows="4" aria-label="Catchphrases, one per line" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit"></textarea>
+      <p class="small">The wording above is a guide: the voice says it in its own words, and the saved wording is used only if it drifts. Placed by code, so it can never repeat between parts of the video.</p>
+    </fieldset>
     <fieldset class="grp"><legend>Voice</legend>
       <label class="sw"><input type="checkbox" id="onev" role="switch"><span><strong>One consistent voice for all commentary</strong><br><span class="small">Every line is spoken in the Character voice of the genre style (for Red Dead, that is Arthur), written in the first person, with each line brought to the same loudness. Turn it off to alternate between the Player, Character and Companion voices.</span></span></label>
     </fieldset>
@@ -265,6 +281,12 @@ function setAmount(n) {
 }
 
 let ONEVOICE = true;
+function fillChannel(s) {
+  $('dayd').checked = s.daydream; $('know').checked = s.knowledge_on; $('moral').value = s.moral_mode;
+  const c = s.channel; $('chname').value = c.channel; $('intro_on').checked = c.intro_on; $('outro_on').checked = c.outro_on; $('catch_on').checked = c.catch_on;
+  $('intro_text').value = c.intro_text; $('outro_text').value = c.outro_text; $('catchphrases').value = c.catchphrases;
+}
+const saveSetting = (id, key, get) => { $(id).onchange = async () => { try { await api('settings', { [key]: get() }); say('Saved. It applies to new and regenerated videos.'); } catch (e) { say(e.message, true); } }; };
 let CAPSET = null;
 function fillCaptions(s) {
   const fill = (id, list, val) => { $(id).innerHTML = list.map(x => `<option value="${x.id}" ${x.id === val ? 'selected' : ''}>${esc(x.name)}</option>`).join(''); };
@@ -328,7 +350,7 @@ function brainLine(v) {
   if (!v.stats || BUSYLIKE.includes(v.status)) return '';
   let st = {}; try { st = JSON.parse(v.stats); } catch (_) { return ''; }
   const r = v.density_rating;
-  return `<div class="prog">Found ${st.beats} emotional moments · ${st.gaps} usable gaps between speech (${st.micro_gaps} short) · ${st.planned} planned · ${st.lines} lines${st.silent ? ` (${st.lines - st.silent} spoken + ${st.silent} silent thoughts)` : ' spoken'}${st.filled ? ` (${st.filled} added by the self-check)` : ''}${st.lines < st.planned ? ` (${st.planned - st.lines} could not be written to fit)` : ''}${st.blocked_by_speech ? ` · ${st.blocked_by_speech} landed in speech` : ''}${st.cutscenes ? ` · ${st.cutscenes} cutscene${st.cutscenes > 1 ? 's' : ''} (${fmtT(st.cutscene_seconds)}) left untouched${st.reactions ? `, ${st.reactions} short reaction${st.reactions > 1 ? 's' : ''} after` : ''}` : ''}${st.target_lpm ? ` · you asked for ${st.target_lpm} a minute, got ${st.per_minute}, and this video has room for at most ${st.possible_per_minute}` : ''} · eagerness ${st.eagerness}${st.slider != null ? ` (your slider ${st.slider}${st.learned ? `, learned ${st.learned > 0 ? '+' : ''}${st.learned}` : ''}${st.arm === 'more' || st.arm === 'less' ? `, A/B test ${st.arm}` : ''})` : ''}</div>
+  return `<div class="prog">Found ${st.beats} emotional moments · ${st.gaps} usable gaps between speech (${st.micro_gaps} short) · ${st.planned} planned · ${st.lines} lines${st.silent ? ` (${st.lines - st.silent} spoken + ${st.silent} silent thoughts)` : ' spoken'}${st.filled ? ` (${st.filled} added by the self-check)` : ''}${st.lines < st.planned ? ` (${st.planned - st.lines} could not be written to fit)` : ''}${st.blocked_by_speech ? ` · ${st.blocked_by_speech} landed in speech` : ''}${st.knowledge ? ' · game knowledge on' : ''}${st.daydreams ? ` · ${st.daydreams} daydream${st.daydreams > 1 ? 's' : ''}` : ''}${st.speech_reactions ? ` · ${st.speech_reactions} reaction${st.speech_reactions > 1 ? 's' : ''} to what people said` : ''}${st.intro || st.outro ? ` · ${[st.intro && 'welcome', st.outro && 'outro'].filter(Boolean).join(' + ')}` : ''}${st.cutscenes ? ` · ${st.cutscenes} cutscene${st.cutscenes > 1 ? 's' : ''} (${fmtT(st.cutscene_seconds)}) left untouched${st.reactions ? `, ${st.reactions} short reaction${st.reactions > 1 ? 's' : ''} after` : ''}` : ''}${st.target_lpm ? ` · you asked for ${st.target_lpm} a minute, got ${st.per_minute}, and this video has room for at most ${st.possible_per_minute}` : ''} · eagerness ${st.eagerness}${st.slider != null ? ` (your slider ${st.slider}${st.learned ? `, learned ${st.learned > 0 ? '+' : ''}${st.learned}` : ''}${st.arm === 'more' || st.arm === 'less' ? `, A/B test ${st.arm}` : ''})` : ''}</div>
     <div class="acts"><span class="small">How was the amount of commentary?</span>
       <button class="s ${r===-1?'primary':''}" data-dens="${v.id}:-1">Too quiet</button>
       <button class="s ${r===0?'primary':''}" data-dens="${v.id}:0">Just right</button>
@@ -357,6 +379,7 @@ function card(v) {
         <button class="s" data-regen="${v.id}" title="Write new commentary with the settings next to it">Regenerate commentary</button>
         <button class="s" data-rerender="${v.id}" title="Re-voice and re-mix the current lines into a fresh video, with the game audio and music kept">Rebuild video</button>
         <button class="s" data-recap="${v.id}" title="Draw the captions again in the chosen look, keeping the same lines and the same voice clips">Redo captions</button>` : ''}
+      ${v.has_video && v.scan_has_actions === false && !BUSYLIKE.includes(v.status) ? `<button class="s primary" data-rescan="${v.id}" title="This scan predates shop, animal and who-died details. Scanning again takes a few minutes and uses Gemini.">Scan again for new details</button>` : ''}
       ${v.status==='ready' ? `<button class="s" data-publish="${v.id}">Upload to YouTube (private)</button>` : ''}
       ${v.status==='awaiting_approval' ? `<a class="s" href="https://youtu.be/${v.yt_video_id}" target="_blank" rel="noopener">Open on YouTube</a><button class="s" data-approve="${v.id}">Make public</button>` : ''}
       ${v.status==='published' ? `<a class="s" href="https://youtu.be/${v.yt_video_id}" target="_blank" rel="noopener">Open on YouTube</a>` : ''}
@@ -397,7 +420,7 @@ async function load() {
     CAT = { packs: s.packs, personalities: s.personalities }; PERSONALITY = s.personality;
     $('personality').innerHTML = opt(CAT.personalities, s.personality);
     $('vpack').innerHTML = opt(CAT.packs, 'western'); loadVoices();
-    setAmount(s.amount); $('yt').checked = s.youtube_publish; $('learn').checked = s.learn; $('ask').checked = s.ask_style; $('ab').checked = s.ab_test; fillCaptions(s); $('cutq').checked = s.cutscene_quiet; $('onev').checked = s.one_voice; ONEVOICE = s.one_voice; markOneVoice(); $('cap_com').checked = s.cap_commentary; $('cap_dlg').checked = s.cap_dialogue;
+    setAmount(s.amount); $('yt').checked = s.youtube_publish; $('learn').checked = s.learn; $('ask').checked = s.ask_style; $('ab').checked = s.ab_test; fillCaptions(s); fillChannel(s); $('cutq').checked = s.cutscene_quiet; $('onev').checked = s.one_voice; ONEVOICE = s.one_voice; markOneVoice(); $('cap_com').checked = s.cap_commentary; $('cap_dlg').checked = s.cap_dialogue;
     $('amt_manual').checked = s.target_lpm > 0; $('amt_auto').checked = !(s.target_lpm > 0); if (s.target_lpm > 0) $('lpm').value = s.target_lpm; $('lpm').disabled = !(s.target_lpm > 0);
   }
   VIDEOS = s.videos; PERSONALITY = s.personality; CLOCK = s.server_time - Date.now()/1000;
@@ -488,6 +511,11 @@ document.querySelectorAll('[data-cap]').forEach(el => el.onchange = async () => 
   try { await api('settings', { [el.dataset.cap]: el.value }); capNote(); refreshPreview(); say('Caption look saved. New videos use it; press Redo captions on a finished one.'); }
   catch (e) { say(e.message, true); } });
 $('cprevkind').onchange = refreshPreview;
+saveSetting('dayd', 'daydream', () => $('dayd').checked); saveSetting('know', 'knowledge_on', () => $('know').checked);
+saveSetting('moral', 'moral_mode', () => $('moral').value); saveSetting('chname', 'channel_name', () => $('chname').value);
+saveSetting('intro_on', 'intro_on', () => $('intro_on').checked); saveSetting('outro_on', 'outro_on', () => $('outro_on').checked);
+saveSetting('catch_on', 'catch_on', () => $('catch_on').checked); saveSetting('intro_text', 'intro_text', () => $('intro_text').value);
+saveSetting('outro_text', 'outro_text', () => $('outro_text').value); saveSetting('catchphrases', 'catchphrases', () => $('catchphrases').value);
 $('cutq').onchange = async () => { await api('settings', { cutscene_quiet: $('cutq').checked }); say($('cutq').checked ? 'Cutscenes are kept silent and caption-free for new and rebuilt videos.' : 'Cutscenes are no longer treated specially.'); };
 $('cap_com').onchange = async () => { await api('settings', { cap_commentary: $('cap_com').checked }); say($('cap_com').checked ? 'Commentary captions and silent thoughts are on for new and rebuilt videos.' : 'Commentary captions are off.'); };
 $('cap_dlg').onchange = async () => { await api('settings', { cap_dialogue: $('cap_dlg').checked }); say($('cap_dlg').checked ? 'Dialogue subtitles are on for new and rebuilt videos.' : 'Dialogue subtitles are off.'); };
@@ -531,6 +559,7 @@ document.addEventListener('click', async e => {
       if (!(b > a)) throw new Error('Type a start and an end such as 1:05 and 2:30.'); await api(`videos/${id}/cutscenes/add`, { start: a, end: b }); await showCuts(id); lastSig = ''; load(); }
     if (d.cutreset) { await api(`videos/${d.cutreset}/cutscenes/reset`, {}); await showCuts(d.cutreset); lastSig = ''; load(); }
     if (d.cutredo) { await api(`videos/${d.cutredo}/cutscenes/redetect`, {}); say('Looking at the video again...'); await refresh(); }
+    if (d.rescan && confirm('Scan this video again for shops, animals and who died? It takes a few minutes and uses Gemini.')) { await api(`videos/${d.rescan}/rescan`, {}); say('Scanning again...'); await refresh(); }
     if (d.recap) { await api(`videos/${d.recap}/recaption`, {}); say('Redrawing the captions in the chosen look...'); await refresh(); }
     if (d.vprev) { const id = $('v_' + d.vprev).value; say('Playing a sample...'); const r = await fetch('/api/voices/preview', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ voice_id: id }) });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Preview failed'); new Audio(URL.createObjectURL(await r.blob())).play(); say(''); }

@@ -33,6 +33,15 @@ Drive folder ──► download ──► transcript (who speaks, when) ──�
 - **Voices per style:** pick the player, character and companion voices for each genre style from your ElevenLabs account, with a Preview button. Your own voice is the default player voice everywhere.
 - **Memory:** it remembers your playstyle across videos (habits, places, running jokes). You can see and **Forget** any entry, or turn learning off.
 
+## Pacing, grounding and game knowledge
+
+- **Quiet by default.** A line needs something real: an action (a purchase, feeding or calming a horse, petting or hunting an animal, a predator, a fight, a choice), something said to Arthur (praise, thanks, a plea, an insult or a threat), or a mission or place change. The slider is a ceiling, never a target to fill, and generic "atmosphere" filler no longer exists.
+- **Daydreams, only while travelling.** While Arthur is just walking or riding with nothing and nobody to react to, the voice may drift into a private, generic thought about a quiet future (a farm, a family someday). Never a named story character, never twice in a row on the same theme, never closer than 20 seconds apart.
+- **Conscience.** An innocent casualty brings quiet remorse; an armed bandit, gang member or lawman who attacked brings grim outlaw justice with no gloating and no remorse; when it is unclear who died, it stays factual. The game's own cues (honor, bounty, labels) decide first, then what the scan sees, or only the game's cues if you choose that in settings.
+- **One welcome, one like-and-subscribe, a few catchphrases.** Placed once by code, with wording you can edit, so they can never repeat between parts of the video. Nothing else may greet or ask for subscribes.
+- **Continuity.** Each part of the video is told it is one continuous piece, what was already said, and how earlier lines started, and any repeated line is removed.
+- **Game knowledge.** For Red Dead: shops and trading, horse and animal care, hunting and predators, honor and the gang, written down in `prompts/knowledge/rdr2.md`. Used only for what the scene confirms. Videos scanned before these details existed show a **Scan again for new details** button.
+
 ## Caption looks
 
 Dialogue subtitles and the inner voice each have their own style and position, chosen in Voice with a live preview on a frame of your own video.

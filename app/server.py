@@ -10,7 +10,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from . import captions, cutscenes, db, envfile, evolve, google_auth, pipeline, sources, styles, voices
+from . import captions, cutscenes, db, envfile, evolve, google_auth, knowledge, pipeline, sources, styles, voices
+from . import channel as channel_lines
 from .config import POLL_SECONDS
 
 STATIC = Path(__file__).parent / "static"
@@ -111,6 +112,16 @@ class Settings(BaseModel):
     ask_style: bool | None = None
     ab_test: bool | None = None
     one_voice: bool | None = None
+    daydream: bool | None = None
+    intro_on: bool | None = None
+    outro_on: bool | None = None
+    catch_on: bool | None = None
+    knowledge_on: bool | None = None
+    channel_name: str | None = None
+    intro_text: str | None = None
+    outro_text: str | None = None
+    catchphrases: str | None = None
+    moral_mode: str | None = None
     cap_style_dialogue: str | None = None
     cap_style_commentary: str | None = None
     cap_pos_dialogue: str | None = None
@@ -195,6 +206,12 @@ def state():
         "ab_test": db.get("ab_test", "0") == "1",
         "cutscene_quiet": pipeline.cutscene_quiet(),
         "one_voice": pipeline.one_voice(),
+        "daydream": pipeline.daydream_on(),
+        "moral_mode": pipeline.moral_mode(),
+        "knowledge_on": db.get("knowledge_on", "1") == "1",
+        "channel": {**{k: v for k, v in channel_lines.settings(db.get).items() if k != "phrases"},
+                    "catchphrases": "\n".join(channel_lines.settings(db.get)["phrases"]),
+                    "defaults": {"intro_text": channel_lines.DEFAULTS["intro_text"], "outro_text": channel_lines.DEFAULTS["outro_text"]}},
         "cap_cfg": pipeline.caption_cfg(),
         **captions.catalog(),
         "cap_commentary": pipeline.cap_commentary(),
@@ -205,7 +222,9 @@ def state():
         "amount": pipeline.amount(),
         "learn": db.get("learn", "1") == "1",
         "videos": [{**v, "has_video": pipeline.final_path(v["id"]).exists(),
-                    "voices": {p: voices.resolve(v["pack"], p) for p in ("player", "character", "companion")}, "known_pack": styles.pack_for_game(v["game"]),
+                    "voices": {p: voices.resolve(v["pack"], p) for p in ("player", "character", "companion")},
+                    "knowledge_name": knowledge.name_for_game(v["game"]),
+                    "scan_has_actions": _scan_has_actions(v["id"]), "known_pack": styles.pack_for_game(v["game"]),
                     "cut_count": len(cutscenes.effective(cutscenes.load(v["cutscenes"]))),
                     "cut_seconds": cutscenes.total_seconds(cutscenes.effective(cutscenes.load(v["cutscenes"])))} for v in db.rows(
             "SELECT id,name,status,error,self_score,combined_score,yt_video_id,pack,personality,game,suggestion,cutscenes,"
@@ -261,10 +280,18 @@ def settings(s: Settings):
             v = styles.pack_id(v)
         elif k == "personality":
             v = styles.personality_id(v)
-        elif k in ("youtube_publish", "learn", "ask_style", "ab_test", "cap_commentary", "cap_dialogue", "cutscene_quiet", "one_voice"):
+        elif k in ("youtube_publish", "learn", "ask_style", "ab_test", "cap_commentary", "cap_dialogue", "cutscene_quiet", "one_voice",
+                    "daydream", "intro_on", "outro_on", "catch_on", "knowledge_on"):
             v = "1" if v else "0"
         elif k == "amount":
             v = max(1, min(10, v))
+        elif k == "moral_mode":
+            if v not in ("both", "cues"):
+                raise HTTPException(400, "moral_mode must be both or cues.")
+        elif k in ("channel_name", "intro_text", "outro_text"):
+            v = " ".join(v.split())[:300]
+        elif k == "catchphrases":
+            v = "\n".join(p.strip()[:80] for p in v.splitlines() if p.strip())[:1200]
         elif k in ("cap_style_dialogue", "cap_style_commentary"):
             if v not in captions.STYLES:
                 raise HTTPException(400, "Unknown caption style.")
@@ -378,6 +405,29 @@ def keys_test(name: str, request: Request):
         raise HTTPException(404, "Unknown setting.")
     ok, message = envfile.test(name)
     return {"ok": ok, "message": message}
+
+
+def _scan_has_actions(vid):
+    """Scans made before the richer action details existed lack them; the page offers a fresh scan for those."""
+    f = pipeline.workdir(vid) / "scenes.json"
+    if not f.exists():
+        return None
+    try:
+        return any("activity" in n for n in __import__("json").loads(f.read_text())[:20])
+    except ValueError:
+        return None
+
+
+@app.post("/api/videos/{vid}/rescan")
+def rescan(vid: int):
+    """Look at the video again for the newer action details (shops, animals, who died). Costs a new scan."""
+    idle_video(vid)
+    work = pipeline.workdir(vid)
+    for name in ("scenes.json", "scenes.partial.json"):
+        (work / name).unlink(missing_ok=True)
+    pipeline.set_status(vid, "watching")
+    run_bg(pipeline.process, vid)
+    return {"ok": True}
 
 
 def _cuts_payload(vid):

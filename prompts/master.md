@@ -27,6 +27,8 @@ TONE BLEND (per line, never all at once)
 
 {PERSONALITY}
 
+{KNOWLEDGE}
+
 OUTPUT SCHEMA
 [
   {

@@ -1,6 +1,6 @@
 import json
 
-from . import guard, styles
+from . import guard, knowledge, styles
 from .config import MIN_GAP_FLOOR, PROMPTS, WINDOW_SECONDS
 from .llm import claude, parse_json
 
@@ -18,6 +18,7 @@ def build_system(style, opts):
     return (tpl.replace("{GUARDRAILS}", (PROMPTS / "guardrails.md").read_text())
             .replace("{GENRE_PACK}", pack_text)
             .replace("{PERSONALITY}", personality_text)
+            .replace("{KNOWLEDGE}", knowledge.for_game(opts.get("game")) if opts.get("knowledge", True) else "")
             .replace("{STYLE}", style)
             .replace("{PERSONA_MODE_RULE}", PERSONA_RULE.get(opts["persona"], PERSONA_RULE["mixed"]))
             .replace("{GAME}", opts["game"])
@@ -53,14 +54,14 @@ def _lines_from(raw, by_id):
             continue
         ln = {**r, "start": o["t"], "max_duration": o["max_duration"], "max_words": o["max_words"],
               "opp_id": o["id"], "beat_kinds": ",".join(o["kinds"]), "salience": o["salience"],
-              "silent": o["kind"] == "silent"}
+              "silent": o["kind"] == "silent", "daydream": o["kind"] == "daydream"}
         if ln.get("trigger_t") is None and o["beat_t"] is not None:
             ln["trigger_t"] = o["beat_t"]
         out.append(ln)
     return out
 
 
-def _ask(system, opps, scenes, segments, windows, kept, profile, lo, hi, note=""):
+def _ask(system, opps, scenes, segments, windows, kept, profile, lo, hi, note="", chunk=None):
     by_id = {o["id"]: o for o in opps}
     user = {
         "window": [lo, hi],
@@ -69,10 +70,14 @@ def _ask(system, opps, scenes, segments, windows, kept, profile, lo, hi, note=""
         "scene_notes": _notes_for(scenes, opps),
         "speech_segments": [s for s in segments if s["end"] > lo and s["start"] < hi],
         "locked_windows": [w for w in windows if w[1] > lo and w[0] < hi],
-        "earlier_lines": [k["line"] for k in kept[-8:]],
+        "earlier_lines": [k["line"] for k in kept[-12:]],
+        "already_said": {"openers": [" ".join(k["line"].split()[:4]) for k in kept[-40:]],
+                         "note": "Do not start a line the way any of these start, and do not repeat an idea already said."},
         "earlier_events": _earlier_events(scenes, lo),
         "player_profile": profile or [],
     }
+    if chunk:
+        user["chunk"] = chunk
     if note:
         user["note"] = note
     return _lines_from(parse_json(claude(system, json.dumps(user))), by_id)
@@ -108,14 +113,19 @@ def write_lines(scenes, segments, windows, system, video_len, opps, profile=None
         hi = lo + WINDOW_SECONDS
         sel = [o for o in opps if lo <= o["t"] < hi]
         if sel:
-            new = _ask(system, sel, scenes, segments, windows, kept, profile, lo, min(hi, video_len))
+            idx = int(lo // WINDOW_SECONDS)
+            chunk = {"index": idx, "of": total_windows, "first": idx == 0,
+                     "note": "This is one continuous video cut into parts only for you. Continue mid-thought. Never greet, "
+                             "introduce yourself or restart; the only greeting is an opportunity with id intro."}
+            new = _ask(system, sel, scenes, segments, windows, kept, profile, lo, min(hi, video_len), chunk=chunk)
             k, d = guard.enforce(kept[-1:] + new if kept else new, windows, scenes, min_gap=MIN_GAP_FLOOR, blocks=blocks)
             fixed = _shorten(system, d, {o["id"]: o for o in sel})
             if fixed:
                 k, d2 = guard.enforce(k + fixed, windows, scenes, min_gap=MIN_GAP_FLOOR, blocks=blocks)
                 d = [x for x in d if x.get("reason") != "too long"] + d2
-            kept += [x for x in k if x["start"] >= lo]
-            dropped += [x for x in d if x["start"] >= lo]
+            fresh, repeats = guard.dedupe([x for x in k if x["start"] >= lo], kept)
+            kept += fresh
+            dropped += [x for x in d if x["start"] >= lo] + repeats
         lo = hi
         if progress:
             progress(min(int(lo // WINDOW_SECONDS), total_windows), total_windows)
@@ -133,4 +143,6 @@ def fill_missed(scenes, segments, windows, system, kept, opps, profile=None, min
                missed[0]["t"] - 1, max(o["t"] for o in missed) + 1,
                note="These planned moments were left without a line. Write one short line for each of them now. Do not skip any.")
     merged, _ = guard.enforce(kept + new, windows, scenes, min_gap=MIN_GAP_FLOOR, blocks=blocks)
-    return merged, len(merged) - len(kept)
+    have = {k.get("opp_id") for k in kept}
+    fresh, _ = guard.dedupe([m for m in merged if m.get("opp_id") not in have], kept)
+    return sorted(kept + fresh, key=lambda x: x["start"]), len(fresh)

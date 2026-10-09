@@ -32,12 +32,25 @@ def parse_subtitles(text):
     return segs
 
 
+def within(segments, length, slack=0.5):
+    """The transcription sometimes invents times after the end of the video. Drop those and trim any that run over."""
+    out = []
+    for s in segments:
+        if s.get("start", 0) >= length - slack:
+            continue
+        out.append({**s, "end": min(s["end"], length)} if s.get("end", 0) > length else s)
+    return out
+
+
 def from_audio(video, work):
     mp3 = Path(work) / "speech.mp3"
     subprocess.run(["ffmpeg", "-y", "-i", str(video), "-vn", "-ac", "1", "-ar", "16000",
                     "-b:a", "48k", str(mp3)], check=True, capture_output=True)
     segs = gemini_json([PROMPT, (mp3.read_bytes(), "audio/mp3")])
-    return [s for s in segs if s.get("end", 0) > s.get("start", 0)]
+    length = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(video)],
+                                  capture_output=True, text=True).stdout.strip() or 0)
+    segs = [s for s in segs if s.get("end", 0) > s.get("start", 0)]
+    return within(segs, length) if length else segs
 
 
 def get_transcript(video, work, sidecar_text=None):

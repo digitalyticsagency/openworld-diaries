@@ -2,6 +2,8 @@
 
 Pure functions, no network. See tests/test_guard.py.
 """
+import re
+
 from .config import (BUFFER_GAME, BUFFER_OTHER, MAX_WORDS, MIN_GAP, READ_LEAD, READ_WORDS_PER_SEC,
                      SILENT_MAX_WORDS, SPEECH_BUFFER, WORDS_PER_SEC)
 
@@ -89,6 +91,54 @@ def callback_ok(line, scenes):
         abs(s.get("t", -999) - c) <= EVENT_WINDOW and _has_event(s) for s in scenes)
 
 
+GREETING = re.compile(r"\b(welcome to|welcome back|hello everyone|hi everyone|hey everyone|hey guys|howdy folks|howdy everyone|"
+                      r"like and subscribe|subscribe|smash that)\b", re.I)
+CANON = re.compile(r"\b(mary|eliza|isaac|dutch|hosea|john|abigail|jack|sadie|micah|javier|bill|karen|tilly|charles|molly|uncle|"
+                   r"pearson|strauss|sean|lenny|trelawny|kieran|susan|leopold|annabelle)\b", re.I)
+
+
+def content_reason(ln, text):
+    """Rules about what a line may say, beyond when and where it may be."""
+    if ln.get("opp_id") not in ("intro", "outro") and GREETING.search(text):
+        return "greeting or subscribe line outside the intro and outro"
+    if ln.get("daydream") and CANON.search(text):
+        return "daydream names a real character"
+    kinds, emo = set((ln.get("beat_kinds") or "").split(",")), ln.get("emotion")
+    if "justice_outlaw" in kinds and emo in ("guilt", "regret"):
+        return "remorse over an armed outlaw"
+    if "casualty_innocent" in kinds and emo in ("pride", "joy", "amusement"):
+        return "celebrating an innocent's death"
+    if "casualty_unclear" in kinds and emo in ("guilt", "regret", "pride", "joy"):
+        return "claims guilt or justice when it is unclear"
+    return None
+
+
+def _words(text):
+    return re.findall(r"[a-z']+", text.lower())
+
+
+def similar(a, b):
+    """The same line said again: same first three words, or mostly the same words."""
+    wa, wb = _words(a), _words(b)
+    if len(wa) >= 3 and len(wb) >= 3 and wa[:3] == wb[:3]:
+        return True
+    sa, sb = set(wa), set(wb)
+    return bool(sa and sb) and len(sa & sb) / len(sa | sb) > 0.6
+
+
+def dedupe(lines, previous):
+    """Drop lines that repeat something already said anywhere earlier in the video."""
+    seen = [p["line"] for p in previous]
+    kept, dropped = [], []
+    for ln in sorted(lines, key=lambda x: x.get("start", 0)):
+        if ln.get("opp_id") not in ("intro", "outro") and any(similar(ln["line"], s) for s in seen):
+            dropped.append({**ln, "reason": "repeats an earlier line"})
+        else:
+            kept.append(ln)
+            seen.append(ln["line"])
+    return kept, dropped
+
+
 def enforce(lines, windows, scenes, min_gap=None, max_words=MAX_WORDS, blocks=None):
     """Return (kept, dropped). Dropped entries carry a 'reason'."""
     min_gap = MIN_GAP if min_gap is None else min_gap
@@ -116,6 +166,8 @@ def enforce(lines, windows, scenes, min_gap=None, max_words=MAX_WORDS, blocks=No
                 reason = "emotion not grounded in an on-screen event"
             elif not callback_ok(ln, scenes):
                 reason = "refers to an event that did not happen"
+            else:
+                reason = content_reason(ln, text)
             if reason:
                 dropped.append({**ln, "reason": reason})
             else:
@@ -140,6 +192,8 @@ def enforce(lines, windows, scenes, min_gap=None, max_words=MAX_WORDS, blocks=No
                 reason = "emotion not grounded in an on-screen event"
             elif not callback_ok(ln, scenes):
                 reason = "refers to an event that did not happen"
+            elif content_reason(ln, text):
+                reason = content_reason(ln, text)
             else:
                 ln = {**ln, "line": text, "max_duration": round(maxd, 2)}
                 kept.append(ln)

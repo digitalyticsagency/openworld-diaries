@@ -53,3 +53,6 @@ CUT_MERGE_GAP = 6.0          # cutscene pieces closer than this are one cutscene
 CUT_PAD = 1.2                # extra silence kept before and after a cutscene
 CUT_MIN_SECONDS = 4.0        # shorter blips need the black bars to count
 AFTER_CUT_MIN = 8.0          # a cutscene this long earns a short reaction when it ends
+
+# pacing and moral logic
+DAYDREAM_SPACING = 20.0      # a quiet-travel daydream is never closer than this to another daydream
