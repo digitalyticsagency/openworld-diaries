@@ -52,7 +52,8 @@ def _lines_from(raw, by_id):
         if not o or not (r.get("line") or "").strip():
             continue
         ln = {**r, "start": o["t"], "max_duration": o["max_duration"], "max_words": o["max_words"],
-              "opp_id": o["id"], "beat_kinds": ",".join(o["kinds"]), "salience": o["salience"]}
+              "opp_id": o["id"], "beat_kinds": ",".join(o["kinds"]), "salience": o["salience"],
+              "silent": o["kind"] == "silent"}
         if ln.get("trigger_t") is None and o["beat_t"] is not None:
             ln["trigger_t"] = o["beat_t"]
         out.append(ln)

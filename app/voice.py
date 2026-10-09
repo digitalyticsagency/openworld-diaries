@@ -41,6 +41,8 @@ def make_clips(lines, windows, system, work, pack=None, progress=None):
     for n, ln in enumerate(lines):
         if progress:
             progress(n, len(lines))
+        if ln.get("silent"):
+            continue  # an on-screen thought: it is captioned, never voiced
         voice = voices.resolve(pack, ln["persona"])
         if not voice:
             raise RuntimeError(f"No voice set for {ln['persona']}. Choose one in the app or set ELEVEN_VOICE_{ln['persona'].upper()} in .env")
@@ -56,7 +58,7 @@ def make_clips(lines, windows, system, work, pack=None, progress=None):
         if d > ln["max_duration"] or not guard.clip_fits(ln["start"], d, windows):
             ln["dropped"] = True   # never talk over speech
             continue
-        clips.append((ln["start"], path))
+        clips.append((ln["start"], path, d))
     return clips
 
 
@@ -65,6 +67,7 @@ def mix(video, clips, out):
         subprocess.run(["ffmpeg", "-y", "-i", str(video), "-c", "copy", str(out)],
                        check=True, capture_output=True)
         return
+    clips = [(s, p) for s, p, *_ in clips]
     inputs = ["-i", str(video)]
     for _, p in clips:
         inputs += ["-i", str(p)]

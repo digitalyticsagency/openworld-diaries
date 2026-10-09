@@ -33,6 +33,13 @@ Drive folder ──► download ──► transcript (who speaks, when) ──�
 - **Voices per style:** pick the player, character and companion voices for each genre style from your ElevenLabs account, with a Preview button. Your own voice is the default player voice everywhere.
 - **Memory:** it remembers your playstyle across videos (habits, places, running jokes). You can see and **Forget** any entry, or turn learning off.
 
+## Captions and silent thoughts
+
+- **Captions burned into the video:** the commentary (spoken lines in bold, silent thoughts in italic quotes, both with a colored bar for the persona) near the top, and the in-game dialogue as subtitles at the bottom. Each can be switched off in Voice. If the game footage already has its own subtitles, switch the dialogue captions off to avoid repeats.
+- **Silent thoughts:** while characters or the player are speaking, the inner voice never talks, but it can appear as an on-screen thought timed to its reading speed. This is how the commentary gets denser without ever speaking over speech.
+- **How much commentary:** Automatic lets the emotion of each moment decide. Manual aims for a number of lines a minute (spoken plus silent) as far as the video's room allows, and each video card tells you what its ceiling was.
+- **This Mac's ffmpeg has no text drawing,** so captions are drawn with Pillow as transparent pictures and laid over the video. Adding captions takes roughly as long as the video's length divided by two.
+
 ## How the brain decides when to speak
 
 1. **Gap planner:** speech is found first (the player's own voice keeps a 1.5 s safety buffer, game dialogue 0.6 s). The free stretches between speech are measured and sized in words, so a 3 second gap gets a micro-line of a few words and a long gap gets a full line.

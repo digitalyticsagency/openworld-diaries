@@ -108,6 +108,9 @@ class Settings(BaseModel):
     youtube_publish: bool | None = None
     ask_style: bool | None = None
     ab_test: bool | None = None
+    cap_commentary: bool | None = None
+    cap_dialogue: bool | None = None
+    target_lpm: float | None = None
     personality: str | None = None
     learn: bool | None = None
     amount: int | None = None
@@ -176,6 +179,9 @@ def state():
         "youtube_publish": pipeline.youtube_on(),
         "ask_style": db.get("ask_style", "1") == "1",
         "ab_test": db.get("ab_test", "0") == "1",
+        "cap_commentary": pipeline.cap_commentary(),
+        "cap_dialogue": pipeline.cap_dialogue(),
+        "target_lpm": pipeline.target_lpm() or 0,
         "personality": styles.personality_id(db.get("personality")),
         **styles.catalog(),
         "amount": pipeline.amount(),
@@ -235,10 +241,12 @@ def settings(s: Settings):
             v = styles.pack_id(v)
         elif k == "personality":
             v = styles.personality_id(v)
-        elif k in ("youtube_publish", "learn", "ask_style", "ab_test"):
+        elif k in ("youtube_publish", "learn", "ask_style", "ab_test", "cap_commentary", "cap_dialogue"):
             v = "1" if v else "0"
         elif k == "amount":
             v = max(1, min(10, v))
+        elif k == "target_lpm":
+            v = "" if v <= 0 else min(12.0, v)   # 0 means automatic: the emotion beats decide
         db.put(k, v)
     return {"ok": True}
 
@@ -262,7 +270,7 @@ def channel(c: Channel):
 @app.get("/api/videos/{vid}/lines")
 def lines(vid: int):
     return db.rows("SELECT id,start,persona,tone,emotion,line,self_score,thumb,"
-                   "COALESCE(dropped,0) dropped FROM lines WHERE video_id=? ORDER BY start", (vid,))
+                   "COALESCE(dropped,0) dropped, COALESCE(silent,0) silent FROM lines WHERE video_id=? ORDER BY start", (vid,))
 
 
 @app.post("/api/videos/{vid}/approve")

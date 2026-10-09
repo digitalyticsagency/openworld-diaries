@@ -3,7 +3,7 @@ the strongest ones for the current eagerness. Pure functions, no network."""
 import re
 
 from . import gaps as gapmod
-from .config import MIN_GAP_FLOOR, REACTION_WINDOW, TAIL
+from .config import MIN_GAP_FLOOR, READ_LEAD, READ_WORDS_PER_SEC, REACTION_WINDOW, SILENT_MAX_WORDS, TAIL
 
 MIN_START_SPACING = MIN_GAP_FLOOR + 2.0   # room for the floor of silence plus a 3-word line
 
@@ -86,7 +86,7 @@ def opportunities(beats, gaps, length, eager=6.0):
         opps.append({"id": f"b{i}", "t": round(start, 2), "beat_t": b["t"], "salience": b["salience"],
                      "kinds": b["kinds"], "why": b["why"], "max_words": mw, "max_duration": round(cap, 2),
                      "kind": "micro" if mw < 9 else "full"})
-    step = max(14.0, min(45.0, 70.0 - 6.0 * eager))   # more eager: atmosphere spots come closer together
+    step = max(10.0, min(45.0, 70.0 - 6.0 * eager))   # more eager: atmosphere spots come closer together
     for j, g in enumerate(gaps):
         span = g["end"] - g["start"]
         if span < (20 if eager < 8.5 else 8):          # at high eagerness even short gaps may host a line
@@ -156,3 +156,81 @@ def _fit_to_neighbours(chosen):
                 o["kind"] = "micro" if o["max_words"] < 9 and o["kind"] != "ambient" else o["kind"]
         fitted.append(o)
     return [o for o in fitted if o["max_words"] >= 3]
+
+
+# ---------------------------------------------------------------- silent thoughts (on screen only)
+
+def _silent_words(room):
+    return min(SILENT_MAX_WORDS, int((room - READ_LEAD) * READ_WORDS_PER_SEC))
+
+
+def silent_opportunities(beats, windows, length, eager=6.0):
+    """Places for unspoken on-screen thoughts: inside the speech that blocks the voice."""
+    opps = []
+    for i, b in enumerate(beats):
+        w = next((w for w in windows if w[0] <= b["t"] <= w[1]), None)
+        if not w:
+            continue
+        start = max(w[0] + 0.4, b["t"] + 0.3)
+        room = w[1] - start - 0.2
+        mw = _silent_words(room)
+        if room >= 2.0 and mw >= 3:
+            opps.append({"id": f"s{i}", "t": round(start, 2), "beat_t": b["t"], "salience": b["salience"],
+                         "kinds": b["kinds"], "why": b["why"] + " (during dialogue)", "max_words": mw,
+                         "max_duration": round(room, 2), "kind": "silent"})
+    step = max(6.0, min(34.0, 46.0 - 3.2 * eager))
+    for j, w in enumerate(windows):
+        span = w[1] - w[0]
+        if span < 6:
+            continue
+        n = max(1, int(span // step))
+        for k in range(n):
+            pos = w[0] + (k + 1) * span / (n + 1)
+            room = min(w[1] - pos - 0.2, 7.0)
+            mw = _silent_words(room)
+            if mw >= 3:
+                opps.append({"id": f"sa{j}_{k}", "t": round(pos, 2), "beat_t": None,
+                             "salience": round(2.8 + min(span / 20, 2.5), 2), "kinds": ["ambient"],
+                             "why": "someone is talking: an unspoken thought about what is being said or where we are",
+                             "max_words": mw, "max_duration": round(room, 2), "kind": "silent"})
+    opps.sort(key=lambda o: o["t"])
+    return opps
+
+
+SILENT_MIN_SPACING = 3.5
+
+
+def select_silent(opps, eager):
+    thr = threshold(eager)
+    chosen = []
+    for o in sorted((o for o in opps if o["salience"] >= thr), key=lambda o: -o["salience"]):
+        need = max(SILENT_MIN_SPACING, base_gap(eager) * 0.7 * (1 - 0.06 * o["salience"]))
+        if all(abs(o["t"] - c["t"]) >= need for c in chosen):
+            chosen.append(o)
+    chosen.sort(key=lambda o: o["t"])
+    fitted = []
+    for i, o in enumerate(chosen):
+        o = dict(o)
+        if i + 1 < len(chosen):
+            room = chosen[i + 1]["t"] - o["t"] - 0.5
+            if room < o["max_duration"]:
+                o["max_duration"] = round(room, 2)
+                o["max_words"] = min(o["max_words"], _silent_words(room))
+        fitted.append(o)
+    return [o for o in fitted if o["max_words"] >= 3]
+
+
+def plan(voiced, silent, eager, length, target_lpm=None):
+    """The chosen opportunities, spoken and silent, sorted by time. With a target (lines a minute) the
+    brain gets as eager as needed to reach it, and trims the weakest if it overshoots."""
+    if not target_lpm:
+        return sorted(select(voiced, eager, length)[0] + select_silent(silent, eager), key=lambda o: o["t"])
+    want = max(1, round(target_lpm * length / 60.0))
+    chosen = []
+    for e in [x * 0.5 for x in range(12, 31)]:
+        chosen = select(voiced, e, length)[0] + select_silent(silent, e)
+        if len(chosen) >= want:
+            break
+    while len(chosen) > want:
+        chosen.remove(min(chosen, key=lambda o: o["salience"]))
+    return sorted(chosen, key=lambda o: o["t"])

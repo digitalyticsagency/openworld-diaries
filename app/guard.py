@@ -2,7 +2,8 @@
 
 Pure functions, no network. See tests/test_guard.py.
 """
-from .config import BUFFER_GAME, BUFFER_OTHER, MAX_WORDS, MIN_GAP, SPEECH_BUFFER, WORDS_PER_SEC
+from .config import (BUFFER_GAME, BUFFER_OTHER, MAX_WORDS, MIN_GAP, READ_LEAD, READ_WORDS_PER_SEC,
+                     SILENT_MAX_WORDS, SPEECH_BUFFER, WORDS_PER_SEC)
 
 STRONG_EMOTIONS = {"pain", "joy", "fear", "grief", "relief", "pride", "disgust", "guilt", "regret"}
 
@@ -40,6 +41,14 @@ def speech_windows(segments, buffer=None):
         else:
             merged.append((a, b))
     return merged
+
+
+def read_seconds(text):
+    """How long an on-screen thought needs to stay up to be read."""
+    return READ_LEAD + len(text.split()) / READ_WORDS_PER_SEC
+
+
+MIN_SILENT_GAP = 1.5
 
 
 def est_duration(text):
@@ -84,11 +93,30 @@ def enforce(lines, windows, scenes, min_gap=None, max_words=MAX_WORDS):
     """Return (kept, dropped). Dropped entries carry a 'reason'."""
     min_gap = MIN_GAP if min_gap is None else min_gap
     kept, dropped = [], []
-    prev_end = -1e9
+    prev_end = prev_silent_end = -1e9
     for ln in sorted(lines, key=lambda x: x.get("start", 0)):
         text = (ln.get("line") or "").strip()
         start = float(ln.get("start", 0))
         reason = None
+        if ln.get("silent"):
+            # On-screen only: it makes no sound, so speech windows do not apply. Its own rules:
+            # short, one at a time, grounded, and a callback must be real.
+            if not text:
+                reason = "empty"
+            elif len(text.split()) > (ln.get("max_words") or SILENT_MAX_WORDS):
+                reason = "too long"
+            elif start < prev_silent_end + MIN_SILENT_GAP:
+                reason = "too close to previous thought"
+            elif not grounded(ln, scenes):
+                reason = "emotion not grounded in an on-screen event"
+            elif not callback_ok(ln, scenes):
+                reason = "refers to an event that did not happen"
+            if reason:
+                dropped.append({**ln, "reason": reason})
+            else:
+                kept.append({**ln, "line": text})
+                prev_silent_end = start + min(read_seconds(text), ln.get("max_duration") or 99)
+            continue
         if not text:
             reason = "empty"
         elif len(text.split()) > (ln.get("max_words") or max_words):

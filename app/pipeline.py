@@ -5,7 +5,7 @@ import time
 import traceback
 from pathlib import Path
 
-from . import beats, db, detect, evolve, gaps, guard, memory, publisher, scenes, sources, styles, transcript, voice, writer
+from . import beats, captions, db, detect, evolve, gaps, guard, memory, publisher, scenes, sources, styles, transcript, voice, writer
 from .config import DATA, MIN_GAP_FLOOR
 
 
@@ -47,7 +47,50 @@ def final_path(vid):
     return workdir(vid) / "final.mp4"
 
 
-WORKING = {"downloading", "detecting", "listening", "watching", "writing", "voicing", "uploading"}
+def target_lpm():
+    """Manual lines per minute, or None when the emotion beats decide."""
+    try:
+        v = float(db.get("target_lpm", "") or 0)
+    except ValueError:
+        return None
+    return v if v > 0 else None
+
+
+def cap_commentary():
+    return db.get("cap_commentary", "1") == "1"
+
+
+def cap_dialogue():
+    return db.get("cap_dialogue", "1") == "1"
+
+
+def plan_commentary(all_beats, free, windows, length, eager, target, silent_on):
+    """Pick what to say and where. With a manual target the possible spots are built at full eagerness, so
+    the target can actually be reached; the result also says what the video's room allows at most."""
+    supply = max(eager, 15.0) if target else eager
+    opps, blocked = beats.opportunities(all_beats, free, length, supply)
+    silent = beats.silent_opportunities(all_beats, windows, length, supply) if silent_on else []
+    chosen = beats.plan(opps, silent, eager, length, target)
+    most = beats.plan(*[beats_ for beats_ in (beats.opportunities(all_beats, free, length, 15.0)[0],
+                                              beats.silent_opportunities(all_beats, windows, length, 15.0) if silent_on else [])],
+                      15.0, length, 999)
+    return chosen, blocked, round(len(most) / (length / 60.0), 1)
+
+
+def _finish(vid, lines, clips, segs, src):
+    """Mix the voice into the game audio, then burn the captions on top."""
+    work = workdir(vid)
+    mixed = work / "mixed.mp4"
+    voice.mix(src, clips, mixed)
+    set_status(vid, "captioning")
+    secs = {round(s, 2): d for s, _, d in clips}
+    com = captions.commentary_items(lines, secs) if cap_commentary() else []
+    dlg = captions.dialogue_items(segs) if cap_dialogue() else []
+    captions.burn(mixed, final_path(vid), dlg, com, work, progress=progress_cb(vid, "Captions"))
+    mixed.unlink(missing_ok=True)
+
+
+WORKING = {"downloading", "detecting", "listening", "watching", "writing", "voicing", "captioning", "uploading"}
 
 
 def set_status(vid, status, error=None):
@@ -72,6 +115,7 @@ def progress_cb(vid, noun):
     t0 = time.time()
 
     def cb(done, total):
+        done, total = (int(done), int(total)) if total > 60 and noun == "Captions" else (done, total)
         left = (time.time() - t0) / done * (total - done) if done else None
         text = f"{noun} {done}/{total}" + (f" · about {_fmt(left)} left" if left is not None and done < total else "")
         db.run("UPDATE videos SET progress=? WHERE id=?", (text, vid))
@@ -204,8 +248,7 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     free = gaps.free_gaps(windows, length)
     arm, offset = evolve.choose_arm(explicit)
     eager = amt + evolve.density_bias(opts["pack"]) + offset
-    opps, blocked = beats.opportunities(all_beats, free, length, eager)
-    chosen, _ = beats.select(opps, eager, length)
+    chosen, blocked, possible = plan_commentary(all_beats, free, windows, length, eager, target_lpm(), cap_commentary())
     db.run("UPDATE videos SET arm=? WHERE id=?", (arm, vid))
 
     system = writer.build_system(_style(v)["text"], opts)
@@ -218,21 +261,24 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
         "beats": len(all_beats), "blocked_by_speech": len(blocked), "gaps": len(free),
         "micro_gaps": sum(1 for g in free if g["kind"] == "micro"), "planned": len(chosen),
         "lines": len(lines), "filled": filled, "eagerness": round(eager, 1), "arm": arm,
-        "slider": amt, "learned": round(eager - amt - offset, 1)}), vid))
+        "slider": amt, "learned": round(eager - amt - offset, 1),
+        "silent": sum(1 for l in lines if l.get("silent")), "target_lpm": target_lpm(),
+        "per_minute": round(len(lines) / (length / 60), 1), "possible_per_minute": possible}), vid))
     (work / "dropped.json").write_text(json.dumps(dropped, indent=2))
 
     set_status(vid, "voicing")
     clips = voice.make_clips(lines, windows, system, work, pack=opts["pack"],
                              progress=progress_cb(vid, "Voice lines"))
-    voice.mix(src, clips, final_path(vid))
+    _finish(vid, lines, clips, segs, src)
 
     db.run("DELETE FROM lines WHERE video_id=?", (vid,))
     for ln in lines:
         db.run("INSERT INTO lines(video_id,start,persona,tone,emotion,line,self_score,max_duration,"
-               "dropped,trigger_t,callback_t,beat_kinds,salience) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+               "dropped,trigger_t,callback_t,beat_kinds,salience,silent) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                (vid, ln["start"], ln["persona"], ln.get("tone"), ln.get("emotion"), ln["line"],
                 ln.get("self_score"), ln.get("max_duration"), 1 if ln.get("dropped") else 0,
-                ln.get("trigger_t"), ln.get("callback_t"), ln.get("beat_kinds"), ln.get("salience")))
+                ln.get("trigger_t"), ln.get("callback_t"), ln.get("beat_kinds"), ln.get("salience"),
+                1 if ln.get("silent") else 0))
     evolve.rescore_video(vid)
     set_status(vid, "ready")
     try:
@@ -260,6 +306,10 @@ def rerender(vid):
         for i, r in enumerate(rows):
             room = guard.next_lock_start(r["start"], windows) - r["start"] - 0.3
             nxt = rows[i + 1]["start"] - r["start"] - 0.5 if i + 1 < len(rows) else 1e9
+            if r.get("silent"):
+                lines.append({"id": r["id"], "start": r["start"], "persona": r["persona"], "emotion": r["emotion"],
+                              "line": r["line"], "silent": True, "max_duration": r["max_duration"] or 6.0})
+                continue
             lines.append({"id": r["id"], "start": r["start"], "persona": r["persona"],
                           "emotion": r["emotion"], "line": r["line"],
                           "max_duration": max(1.0, min(room, nxt, 20.0))})
@@ -268,7 +318,7 @@ def rerender(vid):
         system = writer.build_system(_style(v)["text"], opts)
         clips = voice.make_clips(lines, windows, system, workdir(vid), pack=opts["pack"],
                                  progress=progress_cb(vid, "Voice lines"))
-        voice.mix(workdir(vid) / "source.mp4", clips, final_path(vid))
+        _finish(vid, lines, clips, segs, workdir(vid) / "source.mp4")
         for ln in lines:
             db.run("UPDATE lines SET line=?, dropped=? WHERE id=?",
                    (ln["line"], 1 if ln.get("dropped") else 0, ln["id"]))

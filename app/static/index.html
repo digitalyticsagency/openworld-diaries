@@ -88,6 +88,10 @@
   .key .ctl { display:flex; gap:8px; margin-top:6px; flex-wrap:wrap; }
   .key .ctl input { flex:1 1 220px; }
   .key .res { font-size:13px; margin-top:4px; }
+  fieldset.grp { margin:16px 0 0; padding:12px 14px; border:1px solid var(--line); border-radius:10px; }
+  fieldset.grp legend { padding:0 6px; font-size:13px; color:var(--mute); }
+  label.rad { display:flex; gap:10px; align-items:flex-start; margin:6px 0; color:var(--ink); font-size:16px; }
+  label.rad input[type=radio] { width:auto; margin-top:5px; accent-color:var(--accent); }
   .warn { margin-top:8px; padding:10px 12px; border:1px dashed var(--bad); border-radius:10px; font-size:13px; }
 </style>
 </head>
@@ -157,6 +161,14 @@
       <div><label for="personality">Default personality (layered on top of the genre style)</label><select id="personality"></select></div>
     </div>
     <label class="sw" style="margin-top:14px"><input type="checkbox" id="ask" role="switch"><span><strong>Ask me to confirm the style for each new video</strong><br><span class="small">The app detects the game from a few frames, then waits for your OK before the paid scan starts.</span></span></label>
+    <fieldset class="grp"><legend>How much commentary</legend>
+      <label class="rad"><input type="radio" name="amtmode" value="auto" id="amt_auto"> <span><strong>Automatic</strong> · the emotion of each moment decides (the slider above sets how eager)</span></label>
+      <label class="rad"><input type="radio" name="amtmode" value="manual" id="amt_manual"> <span><strong>Manual</strong> · aim for <input type="number" id="lpm" min="1" max="12" step="0.5" value="5" style="width:80px;display:inline-block;padding:6px 8px"> lines a minute, spoken lines plus silent thoughts, as far as the video's room allows</span></label>
+    </fieldset>
+    <fieldset class="grp"><legend>Captions burned into the video</legend>
+      <label class="sw"><input type="checkbox" id="cap_com" role="switch"><span><strong>The commentary</strong><br><span class="small">Every spoken line is shown as text. While characters are talking, the inner voice appears as a silent on-screen thought instead, so it never talks over speech.</span></span></label>
+      <label class="sw"><input type="checkbox" id="cap_dlg" role="switch"><span><strong>What characters and the player say</strong><br><span class="small">Subtitles for the in-game dialogue, from the transcript.</span></span></label>
+    </fieldset>
     <label class="sw" style="margin-top:14px"><input type="checkbox" id="ab" role="switch"><span><strong>Let the brain test slightly different eagerness (A/B)</strong><br><span class="small">Off: your slider is obeyed exactly. On: about 1 video in 4 runs a little more or less eager, to learn what you prefer.</span></span></label>
     <label class="sw" style="margin-top:14px"><input type="checkbox" id="learn" role="switch"><span><strong>Learn my playstyle across videos</strong><br><span class="small">Remembers habits, places and running jokes so later videos feel continuous. See and delete it below.</span></span></label>
     <p><button class="s" id="save">Save voice settings</button></p>
@@ -203,13 +215,13 @@ const say = (t, err) => { $('msg').textContent = t; $('msg').className = err ? '
 const OPEN = new Set();
 let ready = false, lastSig = '';
 const LEVEL = n => n<=4 ? 'Sparse · only the strongest moments' : n<=7 ? 'Measured · strong moments and a few quiet thoughts' : 'Balanced to chatty · most meaningful moments, plus atmosphere in long silences';
-const WORKING = ['downloading','detecting','listening','watching','writing','voicing','uploading'];
+const WORKING = ['downloading','detecting','listening','watching','writing','voicing','captioning','uploading'];
 const BUSYLIKE = [...WORKING, 'queued'];
 const REGEN = {};
 const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const STEP = { downloading: 'Copying the video', detecting: 'Detecting the game', listening: 'Transcribing the speech',
   watching: 'Scanning the video frame by frame', writing: 'Writing the commentary', voicing: 'Recording voices and mixing',
-  uploading: 'Uploading to YouTube', queued: 'Waiting in line' };
+  captioning: 'Adding captions to the video', uploading: 'Uploading to YouTube', queued: 'Waiting in line' };
 let CLOCK = 0;
 const fmtT = t => { t = Math.max(0, Math.floor(t)); return Math.floor(t/60) + ':' + String(t%60).padStart(2,'0'); };
 const timerHtml = v => v.status_at ? `<span class="timer" data-since="${v.status_at}" data-start="${v.started_at || v.status_at}"></span>` : '';
@@ -265,7 +277,7 @@ function brainLine(v) {
   if (!v.stats || BUSYLIKE.includes(v.status)) return '';
   let st = {}; try { st = JSON.parse(v.stats); } catch (_) { return ''; }
   const r = v.density_rating;
-  return `<div class="prog">Found ${st.beats} emotional moments · ${st.gaps} usable gaps between speech (${st.micro_gaps} short) · ${st.planned} planned · ${st.lines} spoken${st.filled ? ` (${st.filled} added by the self-check)` : ''}${st.lines < st.planned ? ` (${st.planned - st.lines} could not be written to fit)` : ''}${st.blocked_by_speech ? ` · ${st.blocked_by_speech} landed in speech` : ''} · eagerness ${st.eagerness}${st.slider != null ? ` (your slider ${st.slider}${st.learned ? `, learned ${st.learned > 0 ? '+' : ''}${st.learned}` : ''}${st.arm === 'more' || st.arm === 'less' ? `, A/B test ${st.arm}` : ''})` : ''}</div>
+  return `<div class="prog">Found ${st.beats} emotional moments · ${st.gaps} usable gaps between speech (${st.micro_gaps} short) · ${st.planned} planned · ${st.lines} lines${st.silent ? ` (${st.lines - st.silent} spoken + ${st.silent} silent thoughts)` : ' spoken'}${st.filled ? ` (${st.filled} added by the self-check)` : ''}${st.lines < st.planned ? ` (${st.planned - st.lines} could not be written to fit)` : ''}${st.blocked_by_speech ? ` · ${st.blocked_by_speech} landed in speech` : ''}${st.target_lpm ? ` · you asked for ${st.target_lpm} a minute, got ${st.per_minute}, and this video has room for at most ${st.possible_per_minute}` : ''} · eagerness ${st.eagerness}${st.slider != null ? ` (your slider ${st.slider}${st.learned ? `, learned ${st.learned > 0 ? '+' : ''}${st.learned}` : ''}${st.arm === 'more' || st.arm === 'less' ? `, A/B test ${st.arm}` : ''})` : ''}</div>
     <div class="acts"><span class="small">How was the amount of commentary?</span>
       <button class="s ${r===-1?'primary':''}" data-dens="${v.id}:-1">Too quiet</button>
       <button class="s ${r===0?'primary':''}" data-dens="${v.id}:0">Just right</button>
@@ -331,7 +343,8 @@ async function load() {
     CAT = { packs: s.packs, personalities: s.personalities }; PERSONALITY = s.personality;
     $('personality').innerHTML = opt(CAT.personalities, s.personality);
     $('vpack').innerHTML = opt(CAT.packs, 'western'); loadVoices();
-    setAmount(s.amount); $('yt').checked = s.youtube_publish; $('learn').checked = s.learn; $('ask').checked = s.ask_style; $('ab').checked = s.ab_test;
+    setAmount(s.amount); $('yt').checked = s.youtube_publish; $('learn').checked = s.learn; $('ask').checked = s.ask_style; $('ab').checked = s.ab_test; $('cap_com').checked = s.cap_commentary; $('cap_dlg').checked = s.cap_dialogue;
+    $('amt_manual').checked = s.target_lpm > 0; $('amt_auto').checked = !(s.target_lpm > 0); if (s.target_lpm > 0) $('lpm').value = s.target_lpm; $('lpm').disabled = !(s.target_lpm > 0);
   }
   VIDEOS = s.videos; PERSONALITY = s.personality; CLOCK = s.server_time - Date.now()/1000;
   const work = s.videos.filter(v => WORKING.includes(v.status)), waiting = s.videos.filter(v => v.status === 'queued');
@@ -372,7 +385,7 @@ async function showLines(id) {
   box.innerHTML = `<div class="tools"><button class="s" data-rerender="${id}">Re-render video with my edits</button><span class="small">Edit a line or remove it, then re-render. No new AI scan is needed.</span></div>` +
     (ls.map(l => `<div class="ln ${l.dropped ? 'off' : ''}"><span class="t">${mmss(l.start)}</span>
     <input class="ed" data-edit="${l.id}" value="${esc(l.line)}" aria-label="Line at ${mmss(l.start)}">
-    <span class="small">${l.persona}${l.emotion && l.emotion!=='none' ? ' · ' + l.emotion : ''}${l.dropped ? ' · not voiced (no room)' : ''}</span>
+    <span class="small">${l.persona}${l.emotion && l.emotion!=='none' ? ' · ' + l.emotion : ''}${l.silent ? ' · silent thought (on screen only)' : ''}${l.dropped ? ' · not voiced (no room)' : ''}</span>
     <button class="${l.thumb===1?'sel':''}" data-thumb="${l.id}:${l.thumb===1?0:1}" aria-label="Good line">👍</button>
     <button class="${l.thumb===-1?'sel':''}" data-thumb="${l.id}:${l.thumb===-1?0:-1}" aria-label="Bad line">👎</button>
     <button class="x" data-delline="${l.id}" aria-label="Remove line">✕</button></div>`).join('') || '<div class="small">No lines.</div>');
@@ -396,6 +409,12 @@ $('save').onclick = async () => {
 };
 $('yt').onchange = async () => { await api('settings', { youtube_publish: $('yt').checked });
   say($('yt').checked ? 'New videos will be uploaded to YouTube as private.' : 'Videos stay on this Mac. Use Download.'); };
+const saveAmtMode = async () => { const manual = $('amt_manual').checked; $('lpm').disabled = !manual;
+  await api('settings', { target_lpm: manual ? +$('lpm').value || 5 : 0 });
+  say(manual ? `Aiming for about ${$('lpm').value} lines a minute.` : 'Automatic: the emotion of each moment decides.'); };
+$('amt_auto').onchange = saveAmtMode; $('amt_manual').onchange = saveAmtMode; $('lpm').onchange = saveAmtMode;
+$('cap_com').onchange = async () => { await api('settings', { cap_commentary: $('cap_com').checked }); say($('cap_com').checked ? 'Commentary captions and silent thoughts are on for new and rebuilt videos.' : 'Commentary captions are off.'); };
+$('cap_dlg').onchange = async () => { await api('settings', { cap_dialogue: $('cap_dlg').checked }); say($('cap_dlg').checked ? 'Dialogue subtitles are on for new and rebuilt videos.' : 'Dialogue subtitles are off.'); };
 $('ab').onchange = async () => { await api('settings', { ab_test: $('ab').checked }); say($('ab').checked ? 'A/B testing is on.' : 'A/B testing is off: the slider is obeyed exactly.'); };
 $('learn').onchange = async () => { await api('settings', { learn: $('learn').checked }); say('Saved.'); };
 $('ask').onchange = async () => { await api('settings', { ask_style: $('ask').checked }); say($('ask').checked ? 'New videos will wait for your style choice.' : 'New videos will start with the detected style.'); };

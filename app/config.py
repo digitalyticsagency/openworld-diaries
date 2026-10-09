@@ -40,3 +40,9 @@ MIN_GAP_FLOOR = 2.5      # hard floor between any two lines, whatever the planne
 REACTION_WINDOW = 10.0   # a line may come this long after the beat it reacts to
 ARM_SHARE = 0.25         # share of videos used to test a slightly different eagerness
 ARM_OFFSET = 0.8
+
+# captions and silent thoughts
+READ_WORDS_PER_SEC = 3.0   # how fast an on-screen thought can be read
+READ_LEAD = 0.8            # minimum time a thought stays up on top of the reading time
+SILENT_MAX_WORDS = 12
+CAPTION_FPS = 24
