@@ -64,7 +64,7 @@ def put(key, value):
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, str(value)))
 
 
-MIGRATIONS = [("videos", "density_rating", "INTEGER"), ("videos", "arm", "TEXT"), ("videos", "stats", "TEXT"),
+MIGRATIONS = [("videos", "fingerprint", "TEXT"), ("videos", "density_rating", "INTEGER"), ("videos", "arm", "TEXT"), ("videos", "stats", "TEXT"),
               ("lines", "beat_kinds", "TEXT"), ("lines", "salience", "REAL"),
               ("videos", "status_at", "REAL"), ("videos", "started_at", "REAL"), ("videos", "progress", "TEXT"),
               ("videos", "pack", "TEXT"), ("videos", "personality", "TEXT"), ("videos", "game", "TEXT"),

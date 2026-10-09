@@ -1,3 +1,4 @@
+import hashlib
 import json
 import shutil
 import time
@@ -103,6 +104,37 @@ def _style(v):
     return row
 
 
+def fingerprint(path):
+    """Size plus a hash of the first and last megabytes: identifies the same file uploaded twice."""
+    size = Path(path).stat().st_size
+    h = hashlib.sha1(str(size).encode())
+    with open(path, "rb") as f:
+        h.update(f.read(1 << 20))
+        f.seek(max(0, size - (1 << 20)))
+        h.update(f.read(1 << 20))
+    return h.hexdigest()
+
+
+def _reuse_scan(vid, src, work):
+    """If this exact file was already listened to and scanned, copy those results instead of paying again."""
+    fp = fingerprint(src)
+    db.run("UPDATE videos SET fingerprint=? WHERE id=?", (fp, vid))
+    for o in db.rows("SELECT id FROM videos WHERE fingerprint IS NULL AND id!=?", (vid,)):
+        other_src = workdir(o["id"]) / "source.mp4"  # videos from before fingerprints existed
+        if other_src.exists():
+            db.run("UPDATE videos SET fingerprint=? WHERE id=?", (fingerprint(other_src), o["id"]))
+    twin = db.one("SELECT id FROM videos WHERE fingerprint=? AND id!=? ORDER BY id", (fp, vid))
+    while twin:
+        other = workdir(twin["id"])
+        if (other / "scenes.json").exists() and (other / "transcript.json").exists():
+            for name in ("scenes.json", "transcript.json"):
+                if not (work / name).exists():
+                    shutil.copyfile(other / name, work / name)
+            return twin["id"]
+        twin = db.one("SELECT id FROM videos WHERE fingerprint=? AND id>? AND id!=? ORDER BY id", (fp, twin["id"], vid))
+    return None
+
+
 def process(vid):
     """New video: fetch, listen, watch (slow, paid steps, cached), then generate commentary."""
     def run():
@@ -114,6 +146,7 @@ def process(vid):
         if not src.exists():
             set_status(vid, "downloading")
             sources.fetch(fid, src)
+        _reuse_scan(vid, src, work)
         if not v["pack"]:
             if not v["suggestion"]:
                 set_status(vid, "detecting")

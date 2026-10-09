@@ -257,7 +257,8 @@ function card(v) {
         <select data-regsel="${v.id}:amount" aria-label="Commentary amount"><option value="">Same eagerness</option><option value="4" ${r.amount==='4'?'selected':''}>Sparse</option><option value="8" ${r.amount==='8'?'selected':''}>Balanced</option><option value="10" ${r.amount==='10'?'selected':''}>Chatty</option></select>
         <select data-regsel="${v.id}:pack" aria-label="Genre style"><option value="">Same style</option>${opt(CAT.packs, r.pack)}</select>
         <select data-regsel="${v.id}:personality" aria-label="Personality"><option value="">Same personality</option>${opt(CAT.personalities, r.personality)}</select>
-        <button class="s" data-regen="${v.id}">Regenerate</button>` : ''}
+        <button class="s" data-regen="${v.id}" title="Write new commentary with the settings next to it">Regenerate commentary</button>
+        <button class="s" data-rerender="${v.id}" title="Re-voice and re-mix the current lines into a fresh video, with the game audio and music kept">Rebuild video</button>` : ''}
       ${v.status==='ready' ? `<button class="s" data-publish="${v.id}">Upload to YouTube (private)</button>` : ''}
       ${v.status==='awaiting_approval' ? `<a class="s" href="https://youtu.be/${v.yt_video_id}" target="_blank" rel="noopener">Open on YouTube</a><button class="s" data-approve="${v.id}">Make public</button>` : ''}
       ${v.status==='published' ? `<a class="s" href="https://youtu.be/${v.yt_video_id}" target="_blank" rel="noopener">Open on YouTube</a>` : ''}
