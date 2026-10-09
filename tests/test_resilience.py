@@ -106,5 +106,23 @@ class BackfillTests(unittest.TestCase):
         self.assertIsNotNone(db.one("SELECT fingerprint FROM videos WHERE id=?", (old,))["fingerprint"])
 
 
+class RestartCleanupTests(unittest.TestCase):
+    def test_every_working_step_is_reset_when_the_app_starts(self):
+        """A video stopped mid-way must not stay stuck looking busy, whichever step it was on."""
+        from fastapi.testclient import TestClient
+        from app.server import app
+        ids = {}
+        for step in sorted(pipeline.WORKING):
+            ids[step] = db.run("INSERT INTO videos(drive_id,name,status,created) VALUES(?,?,?,?)",
+                               (f"w{step}{time.time_ns()}", "x.mp4", step, time.time())).lastrowid
+        keep = db.run("INSERT INTO videos(drive_id,name,status,created) VALUES(?,?,?,?)", (f"r{time.time_ns()}", "y.mp4", "ready", time.time())).lastrowid
+        with TestClient(app):          # entering the client runs the app's start-up
+            pass
+        for step, vid in ids.items():
+            self.assertEqual(db.one("SELECT status FROM videos WHERE id=?", (vid,))["status"], "queued", step)
+        self.assertEqual(db.one("SELECT status FROM videos WHERE id=?", (keep,))["status"], "ready")
+        self.assertIn("captioning", pipeline.WORKING)
+
+
 if __name__ == "__main__":
     unittest.main()

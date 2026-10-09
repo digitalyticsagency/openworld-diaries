@@ -87,8 +87,8 @@ def start_watcher():
 @asynccontextmanager
 async def lifespan(app):
     # Anything stuck mid-run when the app last stopped goes back in the queue.
-    db.run("UPDATE videos SET status='queued' WHERE status IN "
-           "('downloading','listening','watching','writing','voicing','uploading')")
+    marks = ",".join("?" * len(WORKING))
+    db.run(f"UPDATE videos SET status='queued' WHERE status IN ({marks})", tuple(WORKING))
     if db.get("enabled") == "1":
         start_watcher()
     yield
