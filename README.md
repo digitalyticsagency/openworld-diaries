@@ -22,6 +22,14 @@ Drive folder ──► download ──► transcript (who speaks, when) ──�
 - **Spacing and length.** 6 s minimum between lines, 25 words maximum.
 - These rules live in `prompts/guardrails.md` and `app/guard.py`. The self-improvement loop **cannot edit them**; it only evolves the style block.
 
+## Using the app
+
+- **YouTube switch:** off by default. Videos stay on your Mac and you click **Download video** on the card. Switch it on to upload each finished video as private, or use **Upload to YouTube (private)** on a single video. Making it public is always a separate click.
+- **Commentary amount:** a 1 to 10 slider (Sparse, Balanced, Chatty presets). It sets the minimum gap between lines and a target number of lines per minute. Each video can override it with **Regenerate**.
+- **Regenerate and edit:** Regenerate writes new commentary from the saved scan, with no new Gemini cost. In **Lines** you can edit or remove any line, then **Re-render video**.
+- **Consequences and morality:** the voice can refer back to earlier events and react to choices such as honor changes, but code rejects any reference to something that did not happen on screen.
+- **Memory:** it remembers your playstyle across videos (habits, places, running jokes). You can see and **Forget** any entry, or turn learning off.
+
 ## Self-improvement
 
 Each video is scored three ways: an editor pass by Claude (weak lines get one rewrite), your thumbs up/down on each line, and YouTube's average view percentage. A challenger style prompt is generated every 5 scored videos and used on about 30% of new videos. If it beats the champion by 0.3 points over at least 3 videos, it becomes the champion. Versions are kept in the database.

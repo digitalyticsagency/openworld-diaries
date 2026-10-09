@@ -38,7 +38,7 @@ def pick_variant():
     return champ
 
 
-def refine(lines, scenes, windows, system):
+def refine(lines, scenes, windows, system, min_gap=None):
     """Editor pass: score lines, rewrite the weak ones once, re-apply guardrails."""
     if not lines:
         return lines
@@ -61,7 +61,7 @@ def refine(lines, scenes, windows, system):
             if 0 <= r["i"] < len(lines) and r.get("line"):
                 lines[r["i"]]["line"] = r["line"]
                 lines[r["i"]]["self_score"] = WEAK  # unproven until a human rates it
-    kept, _ = guard.enforce(lines, windows, scenes)
+    kept, _ = guard.enforce(lines, windows, scenes, min_gap=min_gap)
     return kept
 
 
@@ -69,7 +69,7 @@ def rescore_video(video_id):
     v = db.one("SELECT * FROM videos WHERE id=?", (video_id,))
     if not v:
         return
-    ls = db.rows("SELECT self_score, thumb FROM lines WHERE video_id=?", (video_id,))
+    ls = db.rows("SELECT self_score, thumb FROM lines WHERE video_id=? AND COALESCE(dropped,0)=0", (video_id,))
     self_vals = [l["self_score"] for l in ls if l["self_score"] is not None]
     thumbs = [10 if l["thumb"] == 1 else 0 for l in ls if l["thumb"] in (1, -1)]
     m = db.one("SELECT avg_view_pct FROM metrics WHERE video_id=?", (video_id,))

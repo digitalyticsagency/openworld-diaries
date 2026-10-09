@@ -14,6 +14,7 @@ from .config import POLL_SECONDS
 STATIC = Path(__file__).parent / "static"
 _watcher = {"thread": None}
 _busy = threading.Lock()
+WORKING = {"downloading", "listening", "watching", "writing", "voicing", "uploading"}
 
 
 def watched_folders():
@@ -23,8 +24,25 @@ def watched_folders():
     return list(dict.fromkeys(folders))
 
 
+def run_bg(fn, *args):
+    """Run a slow video action in the background, one at a time."""
+    def go():
+        with _busy:
+            fn(*args)
+    threading.Thread(target=go, daemon=True).start()
+
+
+def idle_video(vid):
+    v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
+    if not v:
+        raise HTTPException(404, "No such video.")
+    if v["status"] in WORKING:
+        raise HTTPException(409, "This video is still being processed.")
+    return v
+
+
 def poll_once():
-    if not db.get("active_channel"):
+    if pipeline.youtube_on() and not db.get("active_channel"):
         return
     for folder in watched_folders():
         try:
@@ -33,7 +51,8 @@ def poll_once():
             print("cannot read folder", folder, e)
             continue
         for f in vids:
-            if not db.one("SELECT id FROM videos WHERE drive_id=?", (f["id"],)):
+            if not db.one("SELECT id FROM videos WHERE drive_id=?", (f["id"],)) \
+                    and not db.get(f"ignored:{f['id']}"):
                 db.run("INSERT INTO videos(drive_id,name,status,created) VALUES(?,?,?,?)",
                        (f["id"], f["name"], "queued", time.time()))
     for v in db.rows("SELECT id FROM videos WHERE status='queued' ORDER BY id"):
@@ -86,6 +105,18 @@ class Settings(BaseModel):
     character: str | None = None
     story_point: str | None = None
     voice_notes: str | None = None
+    youtube_publish: bool | None = None
+    learn: bool | None = None
+    amount: int | None = None
+
+
+class Regen(BaseModel):
+    amount: int | None = None
+    persona: str | None = None
+
+
+class LineEdit(BaseModel):
+    line: str
 
 
 class Channel(BaseModel):
@@ -109,16 +140,22 @@ def state():
         "options": pipeline.options(),
         "channels": google_auth.channels(),
         "active_channel": db.get("active_channel"),
-        "videos": db.rows("SELECT id,name,status,error,self_score,combined_score,yt_video_id "
-                          "FROM videos ORDER BY id DESC LIMIT 50"),
+        "youtube_publish": pipeline.youtube_on(),
+        "amount": pipeline.amount(),
+        "learn": db.get("learn", "1") == "1",
+        "videos": [{**v, "has_video": pipeline.final_path(v["id"]).exists()} for v in db.rows(
+            "SELECT id,name,status,error,self_score,combined_score,yt_video_id "
+            "FROM videos ORDER BY id DESC LIMIT 50")],
+        "memory": db.rows("SELECT id,kind,text,count FROM memory ORDER BY count DESC, updated DESC LIMIT 40"),
+        "ratings": db.one("SELECT COALESCE(SUM(thumb=1),0) up, COALESCE(SUM(thumb=-1),0) down FROM lines"),
         "prompts": db.rows("SELECT id,status,n,score_sum,created FROM prompt_versions ORDER BY id DESC LIMIT 10"),
     }
 
 
 @app.post("/api/toggle")
 def toggle(t: Toggle):
-    if t.on and not db.get("active_channel"):
-        raise HTTPException(400, "Connect YouTube first.")
+    if t.on and pipeline.youtube_on() and not db.get("active_channel"):
+        raise HTTPException(400, "Connect YouTube first, or switch YouTube publishing off.")
     db.put("enabled", "1" if t.on else "0")
     if t.on:
         start_watcher()
@@ -151,7 +188,13 @@ async def upload(request: Request, name: str):
 @app.post("/api/settings")
 def settings(s: Settings):
     for k, v in s.model_dump(exclude_none=True).items():
-        db.put(k, sources.normalize(v) if k == "folder_id" else v)
+        if k == "folder_id":
+            v = sources.normalize(v)
+        elif k in ("youtube_publish", "learn"):
+            v = "1" if v else "0"
+        elif k == "amount":
+            v = max(1, min(10, v))
+        db.put(k, v)
     return {"ok": True}
 
 
@@ -173,8 +216,8 @@ def channel(c: Channel):
 
 @app.get("/api/videos/{vid}/lines")
 def lines(vid: int):
-    return db.rows("SELECT id,start,persona,tone,emotion,line,self_score,thumb FROM lines "
-                   "WHERE video_id=? ORDER BY start", (vid,))
+    return db.rows("SELECT id,start,persona,tone,emotion,line,self_score,thumb,"
+                   "COALESCE(dropped,0) dropped FROM lines WHERE video_id=? ORDER BY start", (vid,))
 
 
 @app.post("/api/videos/{vid}/approve")
@@ -188,7 +231,76 @@ def approve(vid: int):
 
 @app.post("/api/videos/{vid}/retry")
 def retry(vid: int):
+    idle_video(vid)
     pipeline.set_status(vid, "queued")
+    run_bg(pipeline.process, vid)
+    return {"ok": True}
+
+
+@app.get("/api/videos/{vid}/download")
+def download(vid: int):
+    v = db.one("SELECT name FROM videos WHERE id=?", (vid,))
+    path = pipeline.final_path(vid)
+    if not v or not path.exists():
+        raise HTTPException(404, "No finished video yet.")
+    return FileResponse(path, media_type="video/mp4", filename=f"{Path(v['name']).stem}_inner.mp4")
+
+
+@app.post("/api/videos/{vid}/regenerate")
+def regenerate(vid: int, r: Regen):
+    idle_video(vid)
+    if not (pipeline.workdir(vid) / "scenes.json").exists():
+        raise HTTPException(400, "The saved scan is missing; use Retry to process it again.")
+    pipeline.set_status(vid, "writing")
+    run_bg(pipeline.regenerate, vid, r.amount, r.persona)
+    return {"ok": True}
+
+
+@app.post("/api/videos/{vid}/rerender")
+def rerender(vid: int):
+    idle_video(vid)
+    pipeline.set_status(vid, "voicing")
+    run_bg(pipeline.rerender, vid)
+    return {"ok": True}
+
+
+@app.post("/api/videos/{vid}/publish")
+def publish(vid: int):
+    v = idle_video(vid)
+    if not db.get("active_channel"):
+        raise HTTPException(400, "Connect YouTube first.")
+    if v["status"] not in ("ready", "failed"):
+        raise HTTPException(400, "Only a finished video can be uploaded.")
+    pipeline.set_status(vid, "uploading")
+    run_bg(pipeline.publish, vid)
+    return {"ok": True}
+
+
+@app.delete("/api/videos/{vid}")
+def delete_video(vid: int):
+    idle_video(vid)
+    pipeline.delete(vid)
+    return {"ok": True}
+
+
+@app.patch("/api/lines/{lid}")
+def edit_line(lid: int, e: LineEdit):
+    text = e.line.strip()
+    if not text or len(text.split()) > 40:
+        raise HTTPException(400, "A line needs 1 to 40 words.")
+    db.run("UPDATE lines SET line=?, dropped=0 WHERE id=?", (text, lid))
+    return {"ok": True}
+
+
+@app.delete("/api/lines/{lid}")
+def delete_line(lid: int):
+    db.run("DELETE FROM lines WHERE id=?", (lid,))
+    return {"ok": True}
+
+
+@app.delete("/api/memory/{mid}")
+def forget(mid: int):
+    db.run("DELETE FROM memory WHERE id=?", (mid,))
     return {"ok": True}
 
 

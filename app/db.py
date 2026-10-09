@@ -26,6 +26,10 @@ CREATE TABLE IF NOT EXISTS prompt_versions (
   text TEXT, status TEXT, n INTEGER DEFAULT 0, score_sum REAL DEFAULT 0,
   parent_id INTEGER, created REAL
 );
+CREATE TABLE IF NOT EXISTS memory (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT, text TEXT UNIQUE, count INTEGER DEFAULT 1, updated REAL
+);
 CREATE TABLE IF NOT EXISTS metrics (
   video_id INTEGER PRIMARY KEY, views INTEGER, likes INTEGER,
   avg_view_pct REAL, fetched REAL
@@ -60,9 +64,16 @@ def put(key, value):
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, str(value)))
 
 
+MIGRATIONS = [("lines", "max_duration", "REAL"), ("lines", "dropped", "INTEGER DEFAULT 0"),
+              ("lines", "trigger_t", "REAL"), ("lines", "callback_t", "REAL")]
+
+
 def init():
     with _lock:
         _c.executescript(SCHEMA)
+        for table, col, typ in MIGRATIONS:
+            if col not in [r[1] for r in _c.execute(f"PRAGMA table_info({table})")]:
+                _c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
         _c.commit()
     if not one("SELECT id FROM prompt_versions LIMIT 1"):
         run("INSERT INTO prompt_versions(text,status,created) VALUES(?,?,?)",

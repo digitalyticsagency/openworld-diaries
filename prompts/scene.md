@@ -13,7 +13,10 @@ Return a JSON array, one object per frame, in order:
   "outcome": "positive|negative|neutral",
   "intensity": 0-3,
   "evidence": "what on screen shows it: HUD flash, health drop, animation, on-screen text"}}],
+"moral_events": [{{"kind": "help|rob|kill|spare|steal|loot_body|ignore|honor_up|honor_down|other",
+  "who": "who was affected",
+  "evidence": "on-screen honor/reputation change, on-screen text, or a clearly visible act"}}],
 "mood_cue": "the scene in 5 words",
 "is_quiet_moment": true or false}}
-Use an empty interactions list when nothing is touched, taken, hurt or gained. Only list an interaction if you can name the evidence. Say "unknown" instead of guessing. is_quiet_moment is true only if there is no combat, no dialogue, no cutscene and no menu.
+Use an empty interactions list when nothing is touched, taken, hurt or gained. Use an empty moral_events list unless a choice with moral weight is visibly made or an honor or reputation change is shown. Only list an interaction if you can name the evidence. Say "unknown" instead of guessing. is_quiet_moment is true only if there is no combat, no dialogue, no cutscene and no menu.
 Frame timestamps in order: {times}

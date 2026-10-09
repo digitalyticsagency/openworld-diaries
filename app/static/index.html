@@ -22,8 +22,8 @@
   h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--mute); margin:0 0 12px; }
   label { display:block; font-size:13px; color:var(--mute); margin:10px 0 4px; }
   input, select { width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font:inherit; }
-  button.s { padding:9px 14px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font:inherit; cursor:pointer; }
-  button.s:hover { border-color:var(--accent); }
+  .s { padding:9px 14px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font:inherit; cursor:pointer; }
+  .s:hover { border-color:var(--accent); }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
   .row > * { flex:1 1 160px; }
   .row > button { flex:0 0 auto; }
@@ -44,6 +44,31 @@
   .up { display:flex; gap:8px; align-items:center; padding-top:8px; font-size:13px; }
   .up progress { flex:1; height:8px; accent-color:var(--accent); }
   .up .nm { flex:0 1 40%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sw { display:flex; align-items:center; gap:12px; margin:6px 0; cursor:pointer; }
+  .sw input { appearance:none; width:44px; height:26px; flex:0 0 44px; border-radius:99px; background:var(--line); position:relative; cursor:pointer; padding:0; border:0; transition:.15s; }
+  .sw input::after { content:""; position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:var(--card); transition:.15s; }
+  .sw input:checked { background:var(--accent); }
+  .sw input:checked::after { left:21px; }
+  .sw input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .sw span { flex:1; }
+  .presets { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 0; }
+  .presets button.on { border-color:var(--accent); color:var(--accent); }
+  input[type=range] { padding:0; accent-color:var(--accent); }
+  .acts { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:center; }
+  .acts select { width:auto; padding:8px 10px; }
+  a.s { text-decoration:none; display:inline-block; line-height:1.5; }
+  button.s.danger:hover { border-color:var(--bad); color:var(--bad); }
+  button.s:disabled { opacity:.45; cursor:default; }
+  .pill.working { color:var(--accent); border-color:var(--accent); animation:pulse 1.4s ease-in-out infinite; }
+  .pill.ready { color:var(--ok); border-color:var(--ok); }
+  @keyframes pulse { 50% { opacity:.5; } }
+  @media (prefers-reduced-motion: reduce) { .pill.working { animation:none; } }
+  .ln input.ed { flex:1; padding:6px 8px; font-size:16px; }
+  .ln.off input.ed { text-decoration:line-through; opacity:.6; }
+  .ln .x { font-size:13px; }
+  .mem { display:flex; justify-content:space-between; gap:8px; padding:6px 0; border-top:1px solid var(--line); font-size:16px; }
+  .mem:first-of-type { border-top:0; }
+  .tools { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:8px 0; }
 </style>
 </head>
 <body>
@@ -67,12 +92,13 @@
   </section>
 
   <section>
-    <h2>1 · Connect</h2>
+    <h2>1 · YouTube <span class="small">(optional)</span></h2>
+    <label class="sw"><input type="checkbox" id="yt" role="switch"><span><strong>Upload finished videos to YouTube</strong><br><span class="small">Off: videos stay on this Mac and you download them. On: each one is uploaded as private, and you choose when to make it public.</span></span></label>
     <div class="row">
       <button class="s" id="connect">Connect YouTube (Google login)</button>
       <select id="channel" aria-label="YouTube channel"></select>
     </div>
-    <label for="folder">Video folder (path on this Mac, or a Google Drive link)</label>
+    <label for="folder">Watch folder (path on this Mac, or a Google Drive link)</label>
     <input id="folder" placeholder="/Users/you/Projects/openworld-diaries/inbox">
   </section>
 
@@ -94,16 +120,28 @@
     </div>
     <label for="voice_notes">Character voice notes</label>
     <input id="voice_notes" placeholder="weary outlaw, loyal, ashamed">
-    <p><button class="s" id="save">Save</button></p>
+    <label for="amount">Commentary amount: <strong id="amountLabel"></strong></label>
+    <input id="amount" type="range" min="1" max="10" step="1">
+    <div class="presets" role="group" aria-label="Commentary presets">
+      <button class="s" data-preset="2">Sparse</button><button class="s" data-preset="5">Balanced</button><button class="s" data-preset="9">Chatty</button>
+    </div>
+    <label class="sw" style="margin-top:14px"><input type="checkbox" id="learn" role="switch"><span><strong>Learn my playstyle across videos</strong><br><span class="small">Remembers habits, places and running jokes so later videos feel continuous. See and delete it below.</span></span></label>
+    <p><button class="s" id="save">Save voice settings</button></p>
   </section>
 
   <section>
-    <h2>3 · Videos <span class="small">(uploaded private; you approve each)</span></h2>
+    <h2>3 · Videos</h2>
     <div id="videos" class="small">Nothing yet.</div>
   </section>
 
   <section>
-    <h2>4 · Evolution</h2>
+    <h2>4 · What the AI remembers</h2>
+    <div id="memory" class="small">Nothing yet. It learns after each video.</div>
+  </section>
+
+  <section>
+    <h2>5 · Evolution</h2>
+    <div id="ratings" class="small"></div>
     <div id="prompts" class="small"></div>
     <p><button class="s" id="evolve">Run evolution cycle now</button></p>
   </section>
@@ -119,7 +157,40 @@ const api = async (path, body) => {
 };
 const say = (t, err) => { $('msg').textContent = t; $('msg').className = err ? 'err' : ''; };
 const OPEN = new Set();
-let ready = false;
+let ready = false, lastSig = '';
+const LPM = [0.5,0.8,1.2,1.6,2,2.5,3,3.5,4.2,5];
+const LEVEL = n => (n<=3 ? 'Sparse' : n<=6 ? 'Balanced' : 'Chatty') + ` · about ${LPM[n-1]} lines a minute`;
+const WORKING = ['downloading','listening','watching','writing','voicing','uploading','queued'];
+const REGEN = {};
+const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const mmss = t => Math.floor(t/60) + ':' + String(Math.floor(t%60)).padStart(2,'0');
+
+function setAmount(n) {
+  $('amount').value = n; $('amountLabel').textContent = LEVEL(+n);
+  document.querySelectorAll('[data-preset]').forEach(b => b.classList.toggle('on', +b.dataset.preset === +n));
+}
+
+function card(v) {
+  const busy = WORKING.includes(v.status);
+  const label = v.status.replace('_',' ');
+  const cls = busy ? 'working' : v.status;
+  const r = REGEN[v.id] ?? '';
+  return `<div class="vid"><div class="vt"><strong>${esc(v.name)}</strong><span class="pill ${cls}">${label}</span></div>
+    ${v.error ? `<div class="small" style="color:var(--bad)">${esc(v.error)}</div>` : ''}
+    <div class="acts">
+      ${v.has_video && !busy ? `<a class="s" href="/api/videos/${v.id}/download" download>Download video</a>` : ''}
+      <button class="s" data-lines="${v.id}">Lines</button>
+      ${!busy && v.has_video ? `<select data-regsel="${v.id}" aria-label="Commentary amount for regenerate">
+          <option value="">Same amount</option><option value="2" ${r==='2'?'selected':''}>Sparse</option><option value="5" ${r==='5'?'selected':''}>Balanced</option><option value="9" ${r==='9'?'selected':''}>Chatty</option></select>
+        <button class="s" data-regen="${v.id}">Regenerate</button>` : ''}
+      ${v.status==='ready' ? `<button class="s" data-publish="${v.id}">Upload to YouTube (private)</button>` : ''}
+      ${v.status==='awaiting_approval' ? `<a class="s" href="https://youtu.be/${v.yt_video_id}" target="_blank" rel="noopener">Open on YouTube</a><button class="s" data-approve="${v.id}">Make public</button>` : ''}
+      ${v.status==='published' ? `<a class="s" href="https://youtu.be/${v.yt_video_id}" target="_blank" rel="noopener">Open on YouTube</a>` : ''}
+      ${v.status==='failed' ? `<button class="s" data-retry="${v.id}">Retry</button>` : ''}
+      ${!busy ? `<button class="s danger" data-del="${v.id}">Delete</button>` : ''}
+      <span class="small">${v.combined_score!=null ? 'score ' + v.combined_score.toFixed(1) : ''}</span>
+    </div><div id="l${v.id}"></div></div>`;
+}
 
 async function load() {
   const s = await api('state');
@@ -130,31 +201,34 @@ async function load() {
     ready = true;
     $('folder').value = s.folder_id;
     for (const k of ['game','persona','character','story_point','voice_notes']) $(k).value = s.options[k] || '';
+    setAmount(s.amount); $('yt').checked = s.youtube_publish; $('learn').checked = s.learn;
   }
+  const sig = JSON.stringify([s.videos, s.channels, s.active_channel, s.memory, s.prompts, s.ratings]);
+  if (sig === lastSig) return;
+  lastSig = sig;
   $('channel').innerHTML = s.channels.length
     ? s.channels.map(c => `<option value="${c.id}" ${c.id===s.active_channel?'selected':''}>${esc(c.title)}</option>`).join('')
     : '<option>No channel connected</option>';
-  $('videos').innerHTML = s.videos.length ? s.videos.map(v => `
-    <div class="vid"><div class="vt"><strong>${esc(v.name)}</strong><span class="pill ${v.status}">${v.status.replace('_',' ')}</span></div>
-    ${v.error ? `<div class="small" style="color:var(--bad)">${esc(v.error)}</div>` : ''}
-    <div class="row" style="margin-top:8px">
-      <button class="s" data-lines="${v.id}">Lines</button>
-      ${v.status==='awaiting_approval' ? `<button class="s" data-approve="${v.id}">Approve &amp; make public</button>` : ''}
-      ${v.status==='failed' ? `<button class="s" data-retry="${v.id}">Retry</button>` : ''}
-      <span class="small">${v.combined_score!=null ? 'score ' + v.combined_score.toFixed(1) : ''}</span>
-    </div><div id="l${v.id}"></div></div>`).join('') : 'Nothing yet.';
+  $('videos').innerHTML = s.videos.length ? s.videos.map(card).join('') : 'Nothing yet. Upload a video above.';
   for (const id of OPEN) showLines(id);
+  $('memory').innerHTML = s.memory.length ? s.memory.map(m =>
+    `<div class="mem"><span>${esc(m.text)} <span class="small">${m.kind}${m.count>1 ? ' · seen ' + m.count + 'x' : ''}</span></span><button class="s danger" data-forget="${m.id}">Forget</button></div>`).join('')
+    : 'Nothing yet. It learns after each video.';
+  $('ratings').textContent = `Your ratings so far: ${s.ratings.up} good, ${s.ratings.down} bad. Rated lines steer the next prompt version.`;
   $('prompts').innerHTML = s.prompts.map(p =>
     `v${p.id} · ${p.status} · ${p.n} videos · avg ${p.n ? (p.score_sum/p.n).toFixed(2) : '-'}`).join('<br>');
 }
-const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 async function showLines(id) {
+  const box = $('l' + id); if (!box) return;
   const ls = await api(`videos/${id}/lines`);
-  $('l' + id).innerHTML = ls.map(l => `<div class="ln"><span class="t">${Math.floor(l.start/60)}:${String(Math.floor(l.start%60)).padStart(2,'0')}</span>
-    <span style="flex:1">${esc(l.line)} <span class="small">${l.persona}${l.emotion && l.emotion!=='none' ? ' · ' + l.emotion : ''}</span></span>
+  box.innerHTML = `<div class="tools"><button class="s" data-rerender="${id}">Re-render video with my edits</button><span class="small">Edit a line or remove it, then re-render. No new AI scan is needed.</span></div>` +
+    (ls.map(l => `<div class="ln ${l.dropped ? 'off' : ''}"><span class="t">${mmss(l.start)}</span>
+    <input class="ed" data-edit="${l.id}" value="${esc(l.line)}" aria-label="Line at ${mmss(l.start)}">
+    <span class="small">${l.persona}${l.emotion && l.emotion!=='none' ? ' · ' + l.emotion : ''}${l.dropped ? ' · not voiced (no room)' : ''}</span>
     <button class="${l.thumb===1?'sel':''}" data-thumb="${l.id}:${l.thumb===1?0:1}" aria-label="Good line">👍</button>
-    <button class="${l.thumb===-1?'sel':''}" data-thumb="${l.id}:${l.thumb===-1?0:-1}" aria-label="Bad line">👎</button></div>`).join('') || '<div class="small">No lines.</div>';
+    <button class="${l.thumb===-1?'sel':''}" data-thumb="${l.id}:${l.thumb===-1?0:-1}" aria-label="Bad line">👎</button>
+    <button class="x" data-delline="${l.id}" aria-label="Remove line">✕</button></div>`).join('') || '<div class="small">No lines.</div>');
 }
 
 $('power').onclick = async () => {
@@ -169,18 +243,40 @@ $('connect').onclick = async () => {
 };
 $('channel').onchange = async () => { await api('channel', { id: $('channel').value }); say('Channel set.'); };
 $('save').onclick = async () => {
-  const b = { folder_id: $('folder').value };
+  const b = { folder_id: $('folder').value, amount: +$('amount').value, learn: $('learn').checked };
   for (const k of ['game','persona','character','story_point','voice_notes']) b[k] = $(k).value;
   await api('settings', b); say('Saved.');
 };
-$('evolve').onclick = async () => { say('Running...'); try { const r = await api('evolve/run', {}); say(`Done: ${JSON.stringify(r)}`); } catch (e) { say(e.message, true); } load(); };
+$('yt').onchange = async () => { await api('settings', { youtube_publish: $('yt').checked });
+  say($('yt').checked ? 'New videos will be uploaded to YouTube as private.' : 'Videos stay on this Mac. Use Download.'); };
+$('learn').onchange = async () => { await api('settings', { learn: $('learn').checked }); say('Saved.'); };
+$('amount').oninput = () => setAmount(+$('amount').value);
+$('amount').onchange = async () => { await api('settings', { amount: +$('amount').value }); say('Commentary amount saved. It applies to new videos and regenerates.'); };
+$('evolve').onclick = async () => { say('Running...'); try { const r = await api('evolve/run', {}); say(`Done: ${JSON.stringify(r)}`); } catch (e) { say(e.message, true); } lastSig=''; load(); };
+const del = async path => { const r = await fetch('/api/' + path, { method: 'DELETE' }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'failed'); };
+const refresh = () => { lastSig = ''; return load(); };
+document.addEventListener('change', async e => {
+  const d = e.target.dataset;
+  try {
+    if (d.regsel) REGEN[d.regsel] = e.target.value;
+    if (d.edit) { await fetch('/api/lines/' + d.edit, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ line: e.target.value }) })
+        .then(async r => { if (!r.ok) throw new Error((await r.json()).detail); }); say('Line saved. Press "Re-render video" to hear it.'); }
+  } catch (err) { say(err.message, true); }
+});
 document.addEventListener('click', async e => {
   const d = e.target.dataset;
   try {
-    if (d.lines) { OPEN.has(+d.lines) ? OPEN.delete(+d.lines) : OPEN.add(+d.lines); if (!OPEN.has(+d.lines)) $('l'+d.lines).innerHTML=''; else showLines(+d.lines); }
-    if (d.approve) { await api(`videos/${d.approve}/approve`, {}); say('Published.'); load(); }
-    if (d.retry) { await api(`videos/${d.retry}/retry`, {}); load(); }
-    if (d.thumb) { const [id, v] = d.thumb.split(':'); await api(`lines/${id}/thumb`, { value: +v }); load(); }
+    if (d.preset) { setAmount(+d.preset); await api('settings', { amount: +d.preset }); say('Commentary amount saved.'); }
+    if (d.lines) { const id = +d.lines; OPEN.has(id) ? OPEN.delete(id) : OPEN.add(id); if (OPEN.has(id)) showLines(id); else $('l'+id).innerHTML=''; }
+    if (d.approve && confirm('Make this video public on YouTube?')) { await api(`videos/${d.approve}/approve`, {}); say('Published.'); await refresh(); }
+    if (d.retry) { await api(`videos/${d.retry}/retry`, {}); await refresh(); }
+    if (d.regen) { const a = REGEN[d.regen]; await api(`videos/${d.regen}/regenerate`, a ? { amount: +a } : {}); say('Regenerating the commentary from the saved scan...'); await refresh(); }
+    if (d.rerender) { await api(`videos/${d.rerender}/rerender`, {}); say('Re-rendering with your edits...'); await refresh(); }
+    if (d.publish) { await api(`videos/${d.publish}/publish`, {}); say('Uploading to YouTube as private...'); await refresh(); }
+    if (d.del && confirm('Delete this video and its commentary from the app? The original file is not touched.')) { await del('videos/' + d.del); OPEN.delete(+d.del); await refresh(); }
+    if (d.delline) { await del('lines/' + d.delline); say('Line removed. Press "Re-render video" to apply.'); lastSig=''; for (const id of OPEN) showLines(id); }
+    if (d.forget) { await del('memory/' + d.forget); await refresh(); }
+    if (d.thumb) { const [id, v] = d.thumb.split(':'); await api(`lines/${id}/thumb`, { value: +v }); for (const o of OPEN) showLines(o); }
   } catch (err) { say(err.message, true); }
 });
 function sendFile(f) {

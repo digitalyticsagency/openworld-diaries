@@ -28,7 +28,14 @@ def _relevant(scenes, lo, hi):
     return [s for s in scenes if lo <= s["t"] < hi and (s.get("is_quiet_moment") or s.get("interactions"))]
 
 
-def write_lines(scenes, segments, windows, system, video_len):
+def _earlier_events(scenes, lo, limit=25):
+    ev = [{"t": s["t"], "interactions": s.get("interactions"), "moral_events": s.get("moral_events")}
+          for s in scenes if s["t"] < lo and (s.get("interactions") or s.get("moral_events"))]
+    return ev[-limit:]
+
+
+def write_lines(scenes, segments, windows, system, video_len, amount=5, profile=None):
+    gap, lpm = guard.amount_profile(amount)
     all_kept, all_dropped = [], []
     lo = 0.0
     while lo < video_len:
@@ -43,9 +50,12 @@ def write_lines(scenes, segments, windows, system, video_len):
                 "speech_segments": seg,
                 "locked_windows": win,
                 "earlier_lines": [k["line"] for k in all_kept[-8:]],
+                "earlier_events": _earlier_events(scenes, lo),
+                "commentary": {"min_gap_seconds": gap, "target_lines_per_minute": lpm},
+                "player_profile": profile or [],
             })
             raw = parse_json(claude(system, user))
-            kept, dropped = guard.enforce(all_kept[-1:] + raw, windows, scenes) if all_kept else guard.enforce(raw, windows, scenes)
+            kept, dropped = guard.enforce(all_kept[-1:] + raw, windows, scenes, min_gap=gap) if all_kept else guard.enforce(raw, windows, scenes, min_gap=gap)
             # keep only this window's new lines (the carried line is already in all_kept)
             new = [k for k in kept if k["start"] >= lo]
             all_kept += new

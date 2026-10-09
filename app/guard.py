@@ -4,7 +4,18 @@ Pure functions, no network. See tests/test_guard.py.
 """
 from .config import MAX_WORDS, MIN_GAP, SPEECH_BUFFER, WORDS_PER_SEC
 
-STRONG_EMOTIONS = {"pain", "joy", "fear", "grief", "relief", "pride", "disgust"}
+STRONG_EMOTIONS = {"pain", "joy", "fear", "grief", "relief", "pride", "disgust", "guilt", "regret"}
+
+# amount 1..10 -> (minimum seconds between lines, target lines per minute)
+_GAPS = [22, 20, 17, 15, 12, 10, 9, 7, 6, 5]
+_LPM = [0.5, 0.8, 1.2, 1.6, 2.0, 2.5, 3.0, 3.5, 4.2, 5.0]
+
+
+def amount_profile(amount):
+    a = max(1, min(10, int(amount)))
+    return _GAPS[a - 1], _LPM[a - 1]
+
+
 EVENT_WINDOW = 4.0  # seconds a scene event may sit away from trigger_t
 
 
@@ -43,12 +54,25 @@ def grounded(line, scenes):
     t = line.get("trigger_t")
     if t is None:
         return False
-    return any(abs(s.get("t", -999) - t) <= EVENT_WINDOW and s.get("interactions")
-               for s in scenes)
+    return any(abs(s.get("t", -999) - t) <= EVENT_WINDOW and _has_event(s) for s in scenes)
 
 
-def enforce(lines, windows, scenes, min_gap=MIN_GAP, max_words=MAX_WORDS):
+def _has_event(scene):
+    return bool(scene.get("interactions") or scene.get("moral_events"))
+
+
+def callback_ok(line, scenes):
+    """A reference to an earlier event must point at a real, earlier event."""
+    c = line.get("callback_t")
+    if c is None:
+        return True
+    return c < float(line.get("start", 0)) and any(
+        abs(s.get("t", -999) - c) <= EVENT_WINDOW and _has_event(s) for s in scenes)
+
+
+def enforce(lines, windows, scenes, min_gap=None, max_words=MAX_WORDS):
     """Return (kept, dropped). Dropped entries carry a 'reason'."""
+    min_gap = MIN_GAP if min_gap is None else min_gap
     kept, dropped = [], []
     prev_end = -1e9
     for ln in sorted(lines, key=lambda x: x.get("start", 0)):
@@ -71,6 +95,8 @@ def enforce(lines, windows, scenes, min_gap=MIN_GAP, max_words=MAX_WORDS):
                 reason = "too close to previous line"
             elif not grounded(ln, scenes):
                 reason = "emotion not grounded in an on-screen event"
+            elif not callback_ok(ln, scenes):
+                reason = "refers to an event that did not happen"
             else:
                 ln = {**ln, "line": text, "max_duration": round(maxd, 2)}
                 kept.append(ln)
