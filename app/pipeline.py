@@ -365,16 +365,10 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     set_status(vid, "voicing")
     clips = voice.make_clips(lines, windows, system, work, pack=opts["pack"],
                              progress=progress_cb(vid, "Voice lines"))
+    # Save the lines before the long caption step: if anything stops during captioning, the commentary and the
+    # voice clips survive and Redo captions can finish the video without writing or speaking anything again.
+    _save_lines(vid, lines)
     _finish(vid, lines, clips, segs, src, blocks)
-
-    db.run("DELETE FROM lines WHERE video_id=?", (vid,))
-    for ln in lines:
-        db.run("INSERT INTO lines(video_id,start,persona,tone,emotion,line,self_score,max_duration,"
-               "dropped,trigger_t,callback_t,beat_kinds,salience,silent,note) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-               (vid, ln["start"], ln["persona"], ln.get("tone"), ln.get("emotion"), ln["line"],
-                ln.get("self_score"), ln.get("max_duration"), 1 if ln.get("dropped") else 0,
-                ln.get("trigger_t"), ln.get("callback_t"), ln.get("beat_kinds"), ln.get("salience"),
-                1 if ln.get("silent") else 0, ln.get("note")))
     evolve.rescore_video(vid)
     set_status(vid, "ready")
     try:
@@ -384,6 +378,17 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
         traceback.print_exc()  # learning must never break a finished video
     if youtube_on() and db.get("active_channel"):
         _publish(vid)
+
+
+def _save_lines(vid, lines):
+    db.run("DELETE FROM lines WHERE video_id=?", (vid,))
+    for ln in lines:
+        db.run("INSERT INTO lines(video_id,start,persona,tone,emotion,line,self_score,max_duration,"
+               "dropped,trigger_t,callback_t,beat_kinds,salience,silent,note) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+               (vid, ln["start"], ln["persona"], ln.get("tone"), ln.get("emotion"), ln["line"],
+                ln.get("self_score"), ln.get("max_duration"), 1 if ln.get("dropped") else 0,
+                ln.get("trigger_t"), ln.get("callback_t"), ln.get("beat_kinds"), ln.get("salience"),
+                1 if ln.get("silent") else 0, ln.get("note")))
 
 
 def recaption(vid):

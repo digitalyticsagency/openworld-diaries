@@ -124,5 +124,38 @@ class RestartCleanupTests(unittest.TestCase):
         self.assertIn("captioning", pipeline.WORKING)
 
 
+class InterruptionTests(unittest.TestCase):
+    def test_if_captioning_stops_the_commentary_is_already_saved(self):
+        """Video 10 lost all its lines because they were saved only after captioning."""
+        vid = db.run("INSERT INTO videos(drive_id,name,status,pack,game,created) VALUES(?,?,?,?,?,?)",
+                     (f"i{time.time_ns()}", "x.mp4", "queued", "western", "Red Dead Redemption 2", time.time())).lastrowid
+        work = pipeline.workdir(vid)
+        work.mkdir(parents=True)
+        (work / "source.mp4").write_bytes(b"x")
+        (work / "scenes.json").write_text(json.dumps([{"t": 0, "activity": "travel"}]))
+        (work / "transcript.json").write_text("[]")
+        line = {"start": 5.0, "line": "Easy now.", "persona": "character", "emotion": "calm", "max_duration": 4, "opp_id": "b1",
+                "beat_kinds": "hunting", "salience": 6, "silent": False}
+        with mock.patch("app.pipeline.scenes.video_length", return_value=120.0), \
+                mock.patch("app.pipeline.ensure_cuts", return_value=cutscenes_empty()), \
+                mock.patch("app.pipeline.sentiment.ensure", return_value=[]), \
+                mock.patch("app.pipeline.writer.write_lines", return_value=([dict(line)], [])), \
+                mock.patch("app.pipeline.writer.fill_missed", side_effect=lambda *a, **k: (a[4], 0)), \
+                mock.patch("app.pipeline.evolve.refine", side_effect=lambda lines, *a, **k: lines), \
+                mock.patch("app.pipeline.voice.make_clips", return_value=[]), \
+                mock.patch("app.pipeline._finish", side_effect=RuntimeError("stopped while captioning")):
+            pipeline.regenerate(vid)
+        row = db.one("SELECT status, error FROM videos WHERE id=?", (vid,))
+        self.assertEqual(row["status"], "failed")
+        self.assertIn("stopped while captioning", row["error"])
+        saved = db.rows("SELECT line, beat_kinds, silent FROM lines WHERE video_id=?", (vid,))
+        self.assertIn(("Easy now.", "hunting", 0), [(s["line"], s["beat_kinds"], s["silent"]) for s in saved])
+
+
+def cutscenes_empty():
+    from app import cutscenes
+    return cutscenes.empty()
+
+
 if __name__ == "__main__":
     unittest.main()
