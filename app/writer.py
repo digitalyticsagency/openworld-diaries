@@ -37,8 +37,9 @@ def _earlier_events(scenes, lo, limit=25):
     return ev[-limit:]
 
 
-def write_lines(scenes, segments, windows, system, video_len, amount=5, profile=None):
+def write_lines(scenes, segments, windows, system, video_len, amount=5, profile=None, progress=None):
     gap, lpm = guard.amount_profile(amount)
+    total_windows = max(1, int(-(-video_len // WINDOW_SECONDS)))
     all_kept, all_dropped = [], []
     lo = 0.0
     while lo < video_len:
@@ -64,4 +65,6 @@ def write_lines(scenes, segments, windows, system, video_len, amount=5, profile=
             all_kept += new
             all_dropped += [d for d in dropped if d["start"] >= lo]
         lo = hi
+        if progress:
+            progress(min(int(lo // WINDOW_SECONDS), total_windows), total_windows)
     return all_kept, all_dropped

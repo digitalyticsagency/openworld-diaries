@@ -73,6 +73,11 @@
   .choose { margin-top:10px; padding:12px; border:1px dashed var(--accent); border-radius:10px; }
   .vrow { display:grid; grid-template-columns:90px 1fr auto; gap:8px; align-items:center; margin:8px 0; }
   .vrow select { width:100%; }
+  #live { margin-top:16px; padding:12px 16px; border:1px solid var(--accent); border-radius:12px; background:color-mix(in srgb,var(--accent) 8%,var(--card)); }
+  #live[hidden] { display:none; }
+  #live .step { font-weight:600; }
+  .timer { font-variant-numeric:tabular-nums; color:var(--accent); font-weight:600; }
+  .prog { font-size:13px; color:var(--mute); margin-top:4px; }
 </style>
 </head>
 <body>
@@ -84,6 +89,8 @@
     <button id="power" aria-pressed="false">AUTO OFF</button>
     <div id="msg" role="status"></div>
   </div>
+
+  <div id="live" role="status" aria-live="polite" hidden></div>
 
   <section>
     <h2>Upload from this Mac</h2>
@@ -178,9 +185,26 @@ const OPEN = new Set();
 let ready = false, lastSig = '';
 const LPM = [0.5,0.8,1.2,1.6,2,2.5,3,3.5,4.2,5];
 const LEVEL = n => (n<=3 ? 'Sparse' : n<=6 ? 'Balanced' : 'Chatty') + ` · about ${LPM[n-1]} lines a minute`;
-const WORKING = ['downloading','detecting','listening','watching','writing','voicing','uploading','queued'];
+const WORKING = ['downloading','detecting','listening','watching','writing','voicing','uploading'];
+const BUSYLIKE = [...WORKING, 'queued'];
 const REGEN = {};
 const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const STEP = { downloading: 'Copying the video', detecting: 'Detecting the game', listening: 'Transcribing the speech',
+  watching: 'Scanning the video frame by frame', writing: 'Writing the commentary', voicing: 'Recording voices and mixing',
+  uploading: 'Uploading to YouTube', queued: 'Waiting in line' };
+let CLOCK = 0;
+const fmtT = t => { t = Math.max(0, Math.floor(t)); return Math.floor(t/60) + ':' + String(t%60).padStart(2,'0'); };
+const timerHtml = v => v.status_at ? `<span class="timer" data-since="${v.status_at}" data-start="${v.started_at || v.status_at}"></span>` : '';
+function tick() {
+  const now = Date.now()/1000 + CLOCK;
+  document.querySelectorAll('.timer').forEach(el => {
+    const step = fmtT(now - +el.dataset.since), total = fmtT(now - +el.dataset.start);
+    el.textContent = step === total ? step : `${step} on this step · ${total} total`;
+  });
+  const first = document.querySelector('#live .timer');
+  document.title = first ? `⏱ ${first.textContent.split(' ')[0]} · Open World Diaries` : 'Open World Diaries';
+}
+setInterval(tick, 1000);
 const mmss = t => Math.floor(t/60) + ':' + String(Math.floor(t%60)).padStart(2,'0');
 
 function setAmount(n) {
@@ -206,9 +230,10 @@ function chooser(v) {
 }
 
 function card(v) {
-  const busy = WORKING.includes(v.status);
+  const busy = BUSYLIKE.includes(v.status);
   const cls = busy ? 'working' : v.status;
   const head = `<div class="vt"><strong>${esc(v.name)}</strong><span class="pill ${cls}">${v.status.replace('_',' ')}</span></div>` +
+    (busy ? `<div class="prog"><strong>${STEP[v.status] || v.status}</strong> ${timerHtml(v)}${v.progress ? ' · ' + esc(v.progress) : ''}</div>` : '') +
     (v.error ? `<div class="small" style="color:var(--bad)">${esc(v.error)}</div>` : '');
   if (v.status === 'choose_style')
     return `<div class="vid">${head}${chooser(v)}<div class="acts"><button class="s danger" data-del="${v.id}">Delete</button></div></div>`;
@@ -255,7 +280,19 @@ async function load() {
     $('vpack').innerHTML = opt(CAT.packs, 'western'); loadVoices();
     setAmount(s.amount); $('yt').checked = s.youtube_publish; $('learn').checked = s.learn; $('ask').checked = s.ask_style;
   }
-  PERSONALITY = s.personality;
+  PERSONALITY = s.personality; CLOCK = s.server_time - Date.now()/1000;
+  const work = s.videos.filter(v => WORKING.includes(v.status)), waiting = s.videos.filter(v => v.status === 'queued');
+  const live = $('live');
+  if (work.length) {
+    const v = work[0];
+    live.hidden = false;
+    live.innerHTML = `<div><span class="step">${STEP[v.status] || v.status}</span> · ${timerHtml(v)}</div>
+      <div class="prog">${esc(v.name.length > 70 ? v.name.slice(0, 67) + '...' : v.name)}${v.progress ? ' · ' + esc(v.progress) : ''}${waiting.length ? ` · ${waiting.length} more waiting` : ''}</div>`;
+  } else if (waiting.length) {
+    live.hidden = false;
+    live.innerHTML = `<div><span class="step">Waiting to start</span></div><div class="prog">${waiting.length} video${waiting.length > 1 ? 's' : ''} in line${s.enabled ? '' : '. Turn AUTO on to process them.'}</div>`;
+  } else { live.hidden = true; live.innerHTML = ''; }
+  tick();
   const sig = JSON.stringify([s.videos, s.channels, s.active_channel, s.memory, s.prompts, s.ratings]);
   if (sig === lastSig) return;
   lastSig = sig;

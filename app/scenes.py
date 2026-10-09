@@ -22,7 +22,7 @@ def extract_frames(video, work):
     return [(i * FRAME_EVERY, f) for i, f in enumerate(sorted(fdir.glob("f_*.jpg")))]
 
 
-def analyze(video, work, game, hints=""):
+def analyze(video, work, game, hints="", progress=None):
     tpl = (PROMPTS / "scene.md").read_text()
     frames = extract_frames(video, work)
     notes = []
@@ -35,5 +35,7 @@ def analyze(video, work, game, hints=""):
             n["t"] = t
         notes += batch
         print(f"scenes {min(i + FRAME_BATCH, len(frames))}/{len(frames)}", file=sys.stderr)
+        if progress:
+            progress(min(i + FRAME_BATCH, len(frames)), len(frames))
     (Path(work) / "scenes.json").write_text(json.dumps(notes, indent=2))
     return notes

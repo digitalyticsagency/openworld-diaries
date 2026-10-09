@@ -33,12 +33,14 @@ def duration(path):
     return float(r.stdout.strip())
 
 
-def make_clips(lines, windows, system, work, pack=None):
+def make_clips(lines, windows, system, work, pack=None, progress=None):
     """Render each line. Real audio length is re-checked against the speech windows."""
     cdir = Path(work) / "clips"
     cdir.mkdir(exist_ok=True)
     clips = []
     for n, ln in enumerate(lines):
+        if progress:
+            progress(n, len(lines))
         voice = voices.resolve(pack, ln["persona"])
         if not voice:
             raise RuntimeError(f"No voice set for {ln['persona']}. Choose one in the app or set ELEVEN_VOICE_{ln['persona'].upper()} in .env")

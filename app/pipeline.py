@@ -1,5 +1,6 @@
 import json
 import shutil
+import time
 import traceback
 from pathlib import Path
 
@@ -45,8 +46,35 @@ def final_path(vid):
     return workdir(vid) / "final.mp4"
 
 
+WORKING = {"downloading", "detecting", "listening", "watching", "writing", "voicing", "uploading"}
+
+
 def set_status(vid, status, error=None):
-    db.run("UPDATE videos SET status=?, error=? WHERE id=?", (status, error, vid))
+    """Record the status and when it began. started_at marks the start of a whole working spell."""
+    now = time.time()
+    prev = db.one("SELECT status, started_at FROM videos WHERE id=?", (vid,))
+    if status in WORKING:
+        started = prev["started_at"] if prev and prev["status"] in WORKING and prev["started_at"] else now
+    else:
+        started = None
+    db.run("UPDATE videos SET status=?, error=?, status_at=?, started_at=?, progress=NULL WHERE id=?",
+           (status, error, now, started, vid))
+
+
+def _fmt(seconds):
+    seconds = int(max(0, seconds))
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+def progress_cb(vid, noun):
+    """Returns f(done, total) that stores 'noun done/total, about M:SS left'."""
+    t0 = time.time()
+
+    def cb(done, total):
+        left = (time.time() - t0) / done * (total - done) if done else None
+        text = f"{noun} {done}/{total}" + (f" · about {_fmt(left)} left" if left is not None and done < total else "")
+        db.run("UPDATE videos SET progress=? WHERE id=?", (text, vid))
+    return cb
 
 
 def _guarded(vid, fn):
@@ -114,7 +142,8 @@ def process(vid):
         if not (work / "scenes.json").exists():
             set_status(vid, "watching")
             o = video_opts(v)
-            scenes.analyze(src, work, o["game"], styles.PACKS[o["pack"]]["hints"])
+            scenes.analyze(src, work, o["game"], styles.PACKS[o["pack"]]["hints"],
+                           progress=progress_cb(vid, "Frames"))
             shutil.rmtree(work / "frames", ignore_errors=True)
         _generate(vid)
     _guarded(vid, run)
@@ -139,12 +168,13 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     set_status(vid, "writing")
     system = writer.build_system(_style(v)["text"], opts)
     lines, dropped = writer.write_lines(notes, segs, windows, system, length, amount=amt,
-                                        profile=memory.profile())
+                                        profile=memory.profile(), progress=progress_cb(vid, "Sections"))
     lines = evolve.refine(lines, notes, windows, system, min_gap=gap)
     (work / "dropped.json").write_text(json.dumps(dropped, indent=2))
 
     set_status(vid, "voicing")
-    clips = voice.make_clips(lines, windows, system, work, pack=opts["pack"])
+    clips = voice.make_clips(lines, windows, system, work, pack=opts["pack"],
+                             progress=progress_cb(vid, "Voice lines"))
     voice.mix(src, clips, final_path(vid))
 
     db.run("DELETE FROM lines WHERE video_id=?", (vid,))
@@ -187,7 +217,8 @@ def rerender(vid):
         set_status(vid, "voicing")
         opts = video_opts(v)
         system = writer.build_system(_style(v)["text"], opts)
-        clips = voice.make_clips(lines, windows, system, workdir(vid), pack=opts["pack"])
+        clips = voice.make_clips(lines, windows, system, workdir(vid), pack=opts["pack"],
+                                 progress=progress_cb(vid, "Voice lines"))
         voice.mix(workdir(vid) / "source.mp4", clips, final_path(vid))
         for ln in lines:
             db.run("UPDATE lines SET line=?, dropped=? WHERE id=?",

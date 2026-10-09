@@ -14,7 +14,7 @@ from .config import POLL_SECONDS
 STATIC = Path(__file__).parent / "static"
 _watcher = {"thread": None}
 _busy = threading.Lock()
-WORKING = {"downloading", "detecting", "listening", "watching", "writing", "voicing", "uploading"}
+WORKING = pipeline.WORKING
 
 
 def watched_folders():
@@ -162,6 +162,7 @@ def state():
         "options": pipeline.options(),
         "channels": google_auth.channels(),
         "active_channel": db.get("active_channel"),
+        "server_time": time.time(),
         "youtube_publish": pipeline.youtube_on(),
         "ask_style": db.get("ask_style", "1") == "1",
         "personality": styles.personality_id(db.get("personality")),
@@ -169,7 +170,8 @@ def state():
         "amount": pipeline.amount(),
         "learn": db.get("learn", "1") == "1",
         "videos": [{**v, "has_video": pipeline.final_path(v["id"]).exists()} for v in db.rows(
-            "SELECT id,name,status,error,self_score,combined_score,yt_video_id,pack,personality,game,suggestion "
+            "SELECT id,name,status,error,self_score,combined_score,yt_video_id,pack,personality,game,suggestion,"
+            "status_at,started_at,progress "
             "FROM videos ORDER BY id DESC LIMIT 50")],
         "memory": db.rows("SELECT id,kind,text,count FROM memory ORDER BY count DESC, updated DESC LIMIT 40"),
         "ratings": db.one("SELECT COALESCE(SUM(thumb=1),0) up, COALESCE(SUM(thumb=-1),0) down FROM lines"),
