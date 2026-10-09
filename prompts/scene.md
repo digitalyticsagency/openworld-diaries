@@ -18,6 +18,8 @@ Return a JSON array, one object per frame, in order:
   "who": "who was affected",
   "evidence": "on-screen honor/reputation change, on-screen text, or a clearly visible act"}}],
 "mood_cue": "the scene in 5 words",
+"is_cutscene": true or false,
 "is_quiet_moment": true or false}}
 Use an empty interactions list when nothing is touched, taken, hurt or gained. Use an empty moral_events list unless a choice with moral weight is visibly made or an honor or reputation change is shown. Only list an interaction if you can name the evidence. Say "unknown" instead of guessing. is_quiet_moment is true only if there is no combat, no dialogue, no cutscene and no menu.
+is_cutscene is true when the frame is a cinematic: black bars along the top and bottom, no HUD or minimap, a staged camera, characters in a scripted scene. Free-roam conversation with the HUD showing is not a cutscene.
 Frame timestamps in order: {times}

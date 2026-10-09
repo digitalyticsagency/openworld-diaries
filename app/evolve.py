@@ -39,7 +39,7 @@ def pick_variant():
     return champ
 
 
-def refine(lines, scenes, windows, system, min_gap=None):
+def refine(lines, scenes, windows, system, min_gap=None, blocks=None):
     """Editor pass: score lines, rewrite the weak ones once, re-apply guardrails."""
     if not lines:
         return lines
@@ -62,7 +62,7 @@ def refine(lines, scenes, windows, system, min_gap=None):
             if 0 <= r["i"] < len(lines) and r.get("line"):
                 lines[r["i"]]["line"] = r["line"]
                 lines[r["i"]]["self_score"] = WEAK  # unproven until a human rates it
-    kept, _ = guard.enforce(lines, windows, scenes, min_gap=min_gap)
+    kept, _ = guard.enforce(lines, windows, scenes, min_gap=min_gap, blocks=blocks)
     return kept
 
 

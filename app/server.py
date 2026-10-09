@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from . import db, envfile, evolve, google_auth, pipeline, sources, styles, voices
+from . import cutscenes, db, envfile, evolve, google_auth, pipeline, sources, styles, voices
 from .config import POLL_SECONDS
 
 STATIC = Path(__file__).parent / "static"
@@ -108,6 +108,7 @@ class Settings(BaseModel):
     youtube_publish: bool | None = None
     ask_style: bool | None = None
     ab_test: bool | None = None
+    cutscene_quiet: bool | None = None
     cap_commentary: bool | None = None
     cap_dialogue: bool | None = None
     target_lpm: float | None = None
@@ -126,6 +127,11 @@ class Regen(BaseModel):
 
 class KeyValue(BaseModel):
     value: str
+
+
+class Span(BaseModel):
+    start: float
+    end: float
 
 
 class Density(BaseModel):
@@ -179,6 +185,7 @@ def state():
         "youtube_publish": pipeline.youtube_on(),
         "ask_style": db.get("ask_style", "1") == "1",
         "ab_test": db.get("ab_test", "0") == "1",
+        "cutscene_quiet": pipeline.cutscene_quiet(),
         "cap_commentary": pipeline.cap_commentary(),
         "cap_dialogue": pipeline.cap_dialogue(),
         "target_lpm": pipeline.target_lpm() or 0,
@@ -187,8 +194,10 @@ def state():
         "amount": pipeline.amount(),
         "learn": db.get("learn", "1") == "1",
         "videos": [{**v, "has_video": pipeline.final_path(v["id"]).exists(),
-                    "voices": voices.assigned(v["pack"]), "known_pack": styles.pack_for_game(v["game"])} for v in db.rows(
-            "SELECT id,name,status,error,self_score,combined_score,yt_video_id,pack,personality,game,suggestion,"
+                    "voices": voices.assigned(v["pack"]), "known_pack": styles.pack_for_game(v["game"]),
+                    "cut_count": len(cutscenes.effective(cutscenes.load(v["cutscenes"]))),
+                    "cut_seconds": cutscenes.total_seconds(cutscenes.effective(cutscenes.load(v["cutscenes"])))} for v in db.rows(
+            "SELECT id,name,status,error,self_score,combined_score,yt_video_id,pack,personality,game,suggestion,cutscenes,"
             "status_at,started_at,progress,density_rating,stats,arm "
             "FROM videos ORDER BY id DESC LIMIT 50")],
         "brain": {"bias": {p: evolve.density_bias(p) for p in styles.PACKS if evolve.density_bias(p)},
@@ -241,7 +250,7 @@ def settings(s: Settings):
             v = styles.pack_id(v)
         elif k == "personality":
             v = styles.personality_id(v)
-        elif k in ("youtube_publish", "learn", "ask_style", "ab_test", "cap_commentary", "cap_dialogue"):
+        elif k in ("youtube_publish", "learn", "ask_style", "ab_test", "cap_commentary", "cap_dialogue", "cutscene_quiet"):
             v = "1" if v else "0"
         elif k == "amount":
             v = max(1, min(10, v))
@@ -270,7 +279,7 @@ def channel(c: Channel):
 @app.get("/api/videos/{vid}/lines")
 def lines(vid: int):
     return db.rows("SELECT id,start,persona,tone,emotion,line,self_score,thumb,"
-                   "COALESCE(dropped,0) dropped, COALESCE(silent,0) silent FROM lines WHERE video_id=? ORDER BY start", (vid,))
+                   "COALESCE(dropped,0) dropped, COALESCE(silent,0) silent, note FROM lines WHERE video_id=? ORDER BY start", (vid,))
 
 
 @app.post("/api/videos/{vid}/approve")
@@ -349,6 +358,66 @@ def keys_test(name: str, request: Request):
         raise HTTPException(404, "Unknown setting.")
     ok, message = envfile.test(name)
     return {"ok": ok, "message": message}
+
+
+def _cuts_payload(vid):
+    c = pipeline.cut_state(vid)
+    eff = cutscenes.effective(c)
+    return {**c, "effective": eff, "seconds": cutscenes.total_seconds(eff), "quiet": pipeline.cutscene_quiet(),
+            "detected": (db.one("SELECT cutscenes FROM videos WHERE id=?", (vid,)) or {}).get("cutscenes") is not None}
+
+
+@app.get("/api/videos/{vid}/cutscenes")
+def get_cutscenes(vid: int):
+    return _cuts_payload(vid)
+
+
+def _edit_cuts(vid, span, fn):
+    if span.end <= span.start or span.start < 0:
+        raise HTTPException(400, "The end must come after the start.")
+    c = pipeline.cut_state(vid)
+    fn(c, span.start, span.end)
+    pipeline.save_cuts(vid, c)
+    return _cuts_payload(vid)
+
+
+@app.post("/api/videos/{vid}/cutscenes/add")
+def add_cutscene(vid: int, span: Span):
+    return _edit_cuts(vid, span, cutscenes.add_range)
+
+
+@app.post("/api/videos/{vid}/cutscenes/remove")
+def remove_cutscene(vid: int, span: Span):
+    return _edit_cuts(vid, span, cutscenes.remove_range)
+
+
+@app.post("/api/videos/{vid}/cutscenes/reset")
+def reset_cutscene_edits(vid: int):
+    c = pipeline.cut_state(vid)
+    c["add"], c["remove"] = [], []
+    pipeline.save_cuts(vid, c)
+    return _cuts_payload(vid)
+
+
+@app.post("/api/videos/{vid}/cutscenes/redetect")
+def redetect_cutscenes(vid: int):
+    """Look at the video again. Hand edits are kept."""
+    idle_video(vid)
+    c = pipeline.cut_state(vid)
+    db.run("UPDATE videos SET cutscenes=NULL WHERE id=?", (vid,))
+    pipeline.set_status(vid, "cutscenes")
+
+    def run():
+        try:
+            notes, _ = pipeline._load(vid)
+            fresh = pipeline.ensure_cuts(vid, notes, pipeline.workdir(vid) / "source.mp4")
+            fresh["add"], fresh["remove"] = c["add"], c["remove"]
+            pipeline.save_cuts(vid, fresh)
+            pipeline.set_status(vid, "ready")
+        except Exception as e:
+            pipeline.set_status(vid, "failed", f"{type(e).__name__}: {e}")
+    run_bg(run)
+    return {"ok": True}
 
 
 @app.post("/api/videos/{vid}/density")

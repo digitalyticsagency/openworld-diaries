@@ -89,7 +89,7 @@ def callback_ok(line, scenes):
         abs(s.get("t", -999) - c) <= EVENT_WINDOW and _has_event(s) for s in scenes)
 
 
-def enforce(lines, windows, scenes, min_gap=None, max_words=MAX_WORDS):
+def enforce(lines, windows, scenes, min_gap=None, max_words=MAX_WORDS, blocks=None):
     """Return (kept, dropped). Dropped entries carry a 'reason'."""
     min_gap = MIN_GAP if min_gap is None else min_gap
     kept, dropped = [], []
@@ -98,6 +98,11 @@ def enforce(lines, windows, scenes, min_gap=None, max_words=MAX_WORDS):
         text = (ln.get("line") or "").strip()
         start = float(ln.get("start", 0))
         reason = None
+        if blocks and text:
+            shown = read_seconds(text) if ln.get("silent") else est_duration(text)
+            if in_window(start, start + shown, blocks):   # cutscene: no voice, no thoughts, no captions
+                dropped.append({**ln, "reason": "during a cutscene"})
+                continue
         if ln.get("silent"):
             # On-screen only: it makes no sound, so speech windows do not apply. Its own rules:
             # short, one at a time, grounded, and a callback must be real.

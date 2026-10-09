@@ -99,7 +99,7 @@ def _shorten(system, dropped, opps_by_id):
     return out
 
 
-def write_lines(scenes, segments, windows, system, video_len, opps, profile=None, progress=None):
+def write_lines(scenes, segments, windows, system, video_len, opps, profile=None, progress=None, blocks=None):
     """One line per chosen opportunity at most. Returns (kept, dropped)."""
     total_windows = max(1, int(-(-video_len // WINDOW_SECONDS)))
     kept, dropped = [], []
@@ -109,10 +109,10 @@ def write_lines(scenes, segments, windows, system, video_len, opps, profile=None
         sel = [o for o in opps if lo <= o["t"] < hi]
         if sel:
             new = _ask(system, sel, scenes, segments, windows, kept, profile, lo, min(hi, video_len))
-            k, d = guard.enforce(kept[-1:] + new if kept else new, windows, scenes, min_gap=MIN_GAP_FLOOR)
+            k, d = guard.enforce(kept[-1:] + new if kept else new, windows, scenes, min_gap=MIN_GAP_FLOOR, blocks=blocks)
             fixed = _shorten(system, d, {o["id"]: o for o in sel})
             if fixed:
-                k, d2 = guard.enforce(k + fixed, windows, scenes, min_gap=MIN_GAP_FLOOR)
+                k, d2 = guard.enforce(k + fixed, windows, scenes, min_gap=MIN_GAP_FLOOR, blocks=blocks)
                 d = [x for x in d if x.get("reason") != "too long"] + d2
             kept += [x for x in k if x["start"] >= lo]
             dropped += [x for x in d if x["start"] >= lo]
@@ -122,7 +122,7 @@ def write_lines(scenes, segments, windows, system, video_len, opps, profile=None
     return kept, dropped
 
 
-def fill_missed(scenes, segments, windows, system, kept, opps, profile=None, min_salience=0.0, limit=12):
+def fill_missed(scenes, segments, windows, system, kept, opps, profile=None, min_salience=0.0, limit=12, blocks=None):
     """Self-check: strong moments the first pass left without a line get one more chance."""
     done = {k.get("opp_id") for k in kept}
     missed = sorted((o for o in opps if o["id"] not in done and o["salience"] >= min_salience),
@@ -132,5 +132,5 @@ def fill_missed(scenes, segments, windows, system, kept, opps, profile=None, min
     new = _ask(system, sorted(missed, key=lambda o: o["t"]), scenes, segments, windows, kept, profile,
                missed[0]["t"] - 1, max(o["t"] for o in missed) + 1,
                note="These planned moments were left without a line. Write one short line for each of them now. Do not skip any.")
-    merged, _ = guard.enforce(kept + new, windows, scenes, min_gap=MIN_GAP_FLOOR)
+    merged, _ = guard.enforce(kept + new, windows, scenes, min_gap=MIN_GAP_FLOOR, blocks=blocks)
     return merged, len(merged) - len(kept)

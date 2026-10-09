@@ -41,8 +41,8 @@ def make_clips(lines, windows, system, work, pack=None, progress=None):
     for n, ln in enumerate(lines):
         if progress:
             progress(n, len(lines))
-        if ln.get("silent"):
-            continue  # an on-screen thought: it is captioned, never voiced
+        if ln.get("silent") or ln.get("dropped"):
+            continue  # a thought is captioned, never voiced; a dropped line is not used at all
         voice = voices.resolve(pack, ln["persona"])
         if not voice:
             raise RuntimeError(f"No voice set for {ln['persona']}. Choose one in the app or set ELEVEN_VOICE_{ln['persona'].upper()} in .env")
@@ -57,6 +57,7 @@ def make_clips(lines, windows, system, work, pack=None, progress=None):
             d = duration(path)
         if d > ln["max_duration"] or not guard.clip_fits(ln["start"], d, windows):
             ln["dropped"] = True   # never talk over speech
+            ln["note"] = "no room for the voice"
             continue
         clips.append((ln["start"], path, d))
     return clips

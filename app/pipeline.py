@@ -5,7 +5,7 @@ import time
 import traceback
 from pathlib import Path
 
-from . import beats, captions, db, detect, evolve, gaps, guard, memory, publisher, scenes, sources, styles, transcript, voice, writer
+from . import beats, captions, cutscenes, db, detect, evolve, gaps, guard, memory, publisher, scenes, sources, styles, transcript, voice, writer
 from .config import DATA, MIN_GAP_FLOOR
 
 
@@ -64,20 +64,61 @@ def cap_dialogue():
     return db.get("cap_dialogue", "1") == "1"
 
 
-def plan_commentary(all_beats, free, windows, length, eager, target, silent_on):
+def cutscene_quiet():
+    """Stay silent and hide captions during cutscenes. On by default."""
+    return db.get("cutscene_quiet", "1") == "1"
+
+
+def cut_state(vid):
+    return cutscenes.load((db.one("SELECT cutscenes FROM videos WHERE id=?", (vid,)) or {}).get("cutscenes"))
+
+
+def save_cuts(vid, c):
+    db.run("UPDATE videos SET cutscenes=? WHERE id=?", (json.dumps(c), vid))
+
+
+def ensure_cuts(vid, notes, src):
+    """Detect cutscenes once per video (the automatic result is kept apart from the user's edits)."""
+    if (db.one("SELECT cutscenes FROM videos WHERE id=?", (vid,)) or {}).get("cutscenes") is None:
+        c = cutscenes.empty()
+        set_status(vid, "cutscenes")
+        c["auto"] = cutscenes.detect(src, notes)["ranges"]
+        save_cuts(vid, c)
+    return cut_state(vid)
+
+
+def active_cuts(c):
+    return cutscenes.effective(c) if cutscene_quiet() else []
+
+
+def drop_in_blocks(lines, blocks):
+    """Mark lines that fall inside a cutscene as not used. Returns how many were dropped."""
+    n = 0
+    for ln in lines:
+        if ln.get("dropped") or not blocks:
+            continue
+        shown = guard.read_seconds(ln["line"]) if ln.get("silent") else guard.est_duration(ln["line"])
+        if cutscenes.overlaps(blocks, ln["start"], ln["start"] + shown):
+            ln["dropped"], ln["note"] = True, "during a cutscene"
+            n += 1
+    return n
+
+
+def plan_commentary(all_beats, free, windows, length, eager, target, silent_on, extra=()):
     """Pick what to say and where. With a manual target the possible spots are built at full eagerness, so
     the target can actually be reached; the result also says what the video's room allows at most."""
     supply = max(eager, 15.0) if target else eager
     opps, blocked = beats.opportunities(all_beats, free, length, supply)
+    opps = sorted(opps + list(extra), key=lambda o: o["t"])
     silent = beats.silent_opportunities(all_beats, windows, length, supply) if silent_on else []
     chosen = beats.plan(opps, silent, eager, length, target)
-    most = beats.plan(*[beats_ for beats_ in (beats.opportunities(all_beats, free, length, 15.0)[0],
+    most = beats.plan(*[beats_ for beats_ in (beats.opportunities(all_beats, free, length, 15.0)[0] + list(extra),
                                               beats.silent_opportunities(all_beats, windows, length, 15.0) if silent_on else [])],
                       15.0, length, 999)
     return chosen, blocked, round(len(most) / (length / 60.0), 1)
 
 
-def _finish(vid, lines, clips, segs, src):
+def _finish(vid, lines, clips, segs, src, blocks=None):
     """Mix the voice into the game audio, then burn the captions on top."""
     work = workdir(vid)
     mixed = work / "mixed.mp4"
@@ -85,12 +126,12 @@ def _finish(vid, lines, clips, segs, src):
     set_status(vid, "captioning")
     secs = {round(s, 2): d for s, _, d in clips}
     com = captions.commentary_items(lines, secs) if cap_commentary() else []
-    dlg = captions.dialogue_items(segs) if cap_dialogue() else []
+    dlg = captions.dialogue_items(segs, blocks) if cap_dialogue() else []
     captions.burn(mixed, final_path(vid), dlg, com, work, progress=progress_cb(vid, "Captions"))
     mixed.unlink(missing_ok=True)
 
 
-WORKING = {"downloading", "detecting", "listening", "watching", "writing", "voicing", "captioning", "uploading"}
+WORKING = {"downloading", "detecting", "listening", "watching", "cutscenes", "writing", "voicing", "captioning", "uploading"}
 
 
 def set_status(vid, status, error=None):
@@ -242,43 +283,53 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     explicit = bool(amt)
     amt = int(amt or amount())
 
+    # Cutscenes first: nothing is said, thought or captioned over them
+    cuts = active_cuts(ensure_cuts(vid, notes, src))
+    blocks = cutscenes.padded(cuts) if cuts else []
+    speech = windows
+    windows = cutscenes.merge([list(w) for w in speech] + blocks)      # where the voice may not speak
+
     # Plan: where can lines go, which moments are worth one, how eager should the brain be
     set_status(vid, "writing")
-    all_beats = beats.find_beats(notes, evolve.kind_weights())
+    all_beats = [b for b in beats.find_beats(notes, evolve.kind_weights())
+                 if not cutscenes.overlaps(blocks, b["t"], b["t"] + 0.01)]
     free = gaps.free_gaps(windows, length)
+    after = beats.after_cutscene(cuts, free, segs)
     arm, offset = evolve.choose_arm(explicit)
     eager = amt + evolve.density_bias(opts["pack"]) + offset
-    chosen, blocked, possible = plan_commentary(all_beats, free, windows, length, eager, target_lpm(), cap_commentary())
+    chosen, blocked, possible = plan_commentary(all_beats, free, cutscenes.subtract_ranges(speech, blocks), length,
+                                                eager, target_lpm(), cap_commentary(), extra=after)
     db.run("UPDATE videos SET arm=? WHERE id=?", (arm, vid))
 
     system = writer.build_system(_style(v)["text"], opts)
     profile = memory.profile()
     lines, dropped = writer.write_lines(notes, segs, windows, system, length, chosen, profile=profile,
-                                        progress=progress_cb(vid, "Sections"))
-    lines, filled = writer.fill_missed(notes, segs, windows, system, lines, chosen, profile=profile)
-    lines = evolve.refine(lines, notes, windows, system, min_gap=MIN_GAP_FLOOR)
+                                        progress=progress_cb(vid, "Sections"), blocks=blocks)
+    lines, filled = writer.fill_missed(notes, segs, windows, system, lines, chosen, profile=profile, blocks=blocks)
+    lines = evolve.refine(lines, notes, windows, system, min_gap=MIN_GAP_FLOOR, blocks=blocks)
     db.run("UPDATE videos SET stats=? WHERE id=?", (json.dumps({
         "beats": len(all_beats), "blocked_by_speech": len(blocked), "gaps": len(free),
         "micro_gaps": sum(1 for g in free if g["kind"] == "micro"), "planned": len(chosen),
         "lines": len(lines), "filled": filled, "eagerness": round(eager, 1), "arm": arm,
         "slider": amt, "learned": round(eager - amt - offset, 1),
         "silent": sum(1 for l in lines if l.get("silent")), "target_lpm": target_lpm(),
-        "per_minute": round(len(lines) / (length / 60), 1), "possible_per_minute": possible}), vid))
+        "per_minute": round(len(lines) / (length / 60), 1), "possible_per_minute": possible,
+        "cutscenes": len(cuts), "cutscene_seconds": cutscenes.total_seconds(cuts), "reactions": len(after)}), vid))
     (work / "dropped.json").write_text(json.dumps(dropped, indent=2))
 
     set_status(vid, "voicing")
     clips = voice.make_clips(lines, windows, system, work, pack=opts["pack"],
                              progress=progress_cb(vid, "Voice lines"))
-    _finish(vid, lines, clips, segs, src)
+    _finish(vid, lines, clips, segs, src, blocks)
 
     db.run("DELETE FROM lines WHERE video_id=?", (vid,))
     for ln in lines:
         db.run("INSERT INTO lines(video_id,start,persona,tone,emotion,line,self_score,max_duration,"
-               "dropped,trigger_t,callback_t,beat_kinds,salience,silent) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+               "dropped,trigger_t,callback_t,beat_kinds,salience,silent,note) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                (vid, ln["start"], ln["persona"], ln.get("tone"), ln.get("emotion"), ln["line"],
                 ln.get("self_score"), ln.get("max_duration"), 1 if ln.get("dropped") else 0,
                 ln.get("trigger_t"), ln.get("callback_t"), ln.get("beat_kinds"), ln.get("salience"),
-                1 if ln.get("silent") else 0))
+                1 if ln.get("silent") else 0, ln.get("note")))
     evolve.rescore_video(vid)
     set_status(vid, "ready")
     try:
@@ -313,15 +364,20 @@ def rerender(vid):
             lines.append({"id": r["id"], "start": r["start"], "persona": r["persona"],
                           "emotion": r["emotion"], "line": r["line"],
                           "max_duration": max(1.0, min(room, nxt, 20.0))})
+        cuts = active_cuts(ensure_cuts(vid, notes, workdir(vid) / "source.mp4"))
+        blocks = cutscenes.padded(cuts) if cuts else []
+        windows = cutscenes.merge([list(w) for w in windows] + blocks)
+        # lines are judged afresh: one dropped for a cutscene that was since removed gets its place back
+        drop_in_blocks(lines, blocks)
         set_status(vid, "voicing")
         opts = video_opts(v)
         system = writer.build_system(_style(v)["text"], opts)
         clips = voice.make_clips(lines, windows, system, workdir(vid), pack=opts["pack"],
                                  progress=progress_cb(vid, "Voice lines"))
-        _finish(vid, lines, clips, segs, workdir(vid) / "source.mp4")
+        _finish(vid, lines, clips, segs, workdir(vid) / "source.mp4", blocks)
         for ln in lines:
-            db.run("UPDATE lines SET line=?, dropped=? WHERE id=?",
-                   (ln["line"], 1 if ln.get("dropped") else 0, ln["id"]))
+            db.run("UPDATE lines SET line=?, dropped=?, note=? WHERE id=?",
+                   (ln["line"], 1 if ln.get("dropped") else 0, ln.get("note"), ln["id"]))
         set_status(vid, "ready")
     _guarded(vid, run)
 

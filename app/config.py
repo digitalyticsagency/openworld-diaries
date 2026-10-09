@@ -46,3 +46,10 @@ READ_WORDS_PER_SEC = 3.0   # how fast an on-screen thought can be read
 READ_LEAD = 0.8            # minimum time a thought stays up on top of the reading time
 SILENT_MAX_WORDS = 12
 CAPTION_FPS = 24
+
+# cutscenes
+CUT_STEP = FRAME_EVERY       # seconds between checked frames
+CUT_MERGE_GAP = 6.0          # cutscene pieces closer than this are one cutscene
+CUT_PAD = 1.2                # extra silence kept before and after a cutscene
+CUT_MIN_SECONDS = 4.0        # shorter blips need the black bars to count
+AFTER_CUT_MIN = 8.0          # a cutscene this long earns a short reaction when it ends

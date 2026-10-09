@@ -33,6 +33,10 @@ Drive folder ──► download ──► transcript (who speaks, when) ──�
 - **Voices per style:** pick the player, character and companion voices for each genre style from your ElevenLabs account, with a Preview button. Your own voice is the default player voice everywhere.
 - **Memory:** it remembers your playstyle across videos (habits, places, running jokes). You can see and **Forget** any entry, or turn learning off.
 
+## Cutscenes
+
+Cinematics play untouched: no voice, no silent thoughts and no captions. They are found from three signals, and any one counts (when unsure, it assumes a cutscene): cinematic black bars across the top and bottom of the frame (a quick free check of the video), the vision scan's cutscene flag, and the scan's player state. Right after a long cutscene ends there is one short reaction, built only from what was said in it. On each video, the **Cutscenes** button lists the ranges so you can mark one as not a cutscene, add one by hand (for example 1:05 to 2:30), or look again. After changing ranges, press Rebuild video (lines inside new cutscenes are dropped) or Regenerate commentary.
+
 ## Captions and silent thoughts
 
 - **Captions burned into the video:** the commentary (spoken lines in bold, silent thoughts in italic quotes, both with a colored bar for the persona) near the top, and the in-game dialogue as subtitles at the bottom. Each can be switched off in Voice. If the game footage already has its own subtitles, switch the dialogue captions off to avoid repeats.

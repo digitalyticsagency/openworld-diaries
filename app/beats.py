@@ -3,7 +3,7 @@ the strongest ones for the current eagerness. Pure functions, no network."""
 import re
 
 from . import gaps as gapmod
-from .config import MIN_GAP_FLOOR, READ_LEAD, READ_WORDS_PER_SEC, REACTION_WINDOW, SILENT_MAX_WORDS, TAIL
+from .config import AFTER_CUT_MIN, MIN_GAP_FLOOR, READ_LEAD, READ_WORDS_PER_SEC, REACTION_WINDOW, SILENT_MAX_WORDS, TAIL
 
 MIN_START_SPACING = MIN_GAP_FLOOR + 2.0   # room for the floor of silence plus a 3-word line
 
@@ -234,3 +234,26 @@ def plan(voiced, silent, eager, length, target_lpm=None):
     while len(chosen) > want:
         chosen.remove(min(chosen, key=lambda o: o["salience"]))
     return sorted(chosen, key=lambda o: o["t"])
+
+
+def after_cutscene(cuts, gaps, segments, length=None):
+    """One short reaction in the first gap after a real cutscene ends, drawn only from what was said."""
+    out = []
+    for i, (a, b) in enumerate(cuts):
+        if b - a < AFTER_CUT_MIN:
+            continue
+        loc = gapmod.locate(gaps, b + 0.2, 8.0)
+        if not loc:
+            continue
+        start, g = loc
+        cap = g["end"] - start - TAIL
+        mw = min(9, gapmod.words_for(cap))
+        if mw < 3:
+            continue
+        said = [s["text"].strip() for s in segments
+                if a <= s["start"] <= b and (s.get("text") or "").strip() and not s["text"].strip().startswith("[")][-3:]
+        out.append({"id": f"c{i}", "t": round(start, 2), "beat_t": None, "salience": 7.5, "kinds": ["cutscene_end"],
+                    "why": f"A cutscene of {b - a:.0f} seconds has just ended. React in a few words to what it meant, "
+                           f"using only what was said: " + (" / ".join(said) if said else "(nothing was transcribed)"),
+                    "max_words": mw, "max_duration": round(cap, 2), "kind": "micro"})
+    return out

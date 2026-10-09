@@ -71,14 +71,17 @@ def render(item, W, H, path):
     img.save(path)
 
 
-def dialogue_items(segments):
+def dialogue_items(segments, blocks=None):
     """What is said in the game, as on-screen text. Sound effects like [grunts] are left out."""
     out = []
     for s in segments:
         text = re.sub(r"\s+", " ", (s.get("text") or "")).strip()
         if not text or text.startswith("[") or s["end"] <= s["start"]:
             continue
-        out.append({"start": s["start"], "end": max(s["end"], s["start"] + 1.2), "text": text, "kind": "dialogue"})
+        item = {"start": s["start"], "end": max(s["end"], s["start"] + 1.2), "text": text, "kind": "dialogue"}
+        if blocks and any(item["start"] < y and item["end"] > x for x, y in blocks):
+            continue  # a cutscene plays untouched, with the game's own subtitles
+        out.append(item)
     return out
 
 
