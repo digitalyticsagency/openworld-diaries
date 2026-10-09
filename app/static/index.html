@@ -117,10 +117,11 @@
     <h2>Upload from this Mac</h2>
     <div id="drop" tabindex="0" role="button" aria-label="Choose or drop video files">
       <strong>Drop a gameplay video here, or click to choose</strong>
-      <span class="small">Add an .srt or .vtt caption file with the same name to give the AI the exact words said. Processing starts when AUTO is on.</span>
+      <span class="small">Add an .srt or .vtt caption file with the same name to give the AI the exact words said. Nothing is analysed until you press Start AI analysis below.</span>
     </div>
     <input id="file" type="file" accept="video/*,.mkv,.srt,.vtt" multiple hidden>
     <div id="uploads"></div>
+    <div class="acts"><button class="s primary" id="analyze">Start AI analysis</button><span class="small">Runs on every uploaded video that is waiting, one after another.</span></div>
   </section>
 
   <section>
@@ -433,7 +434,7 @@ async function load() {
       <div class="prog">${esc(v.name.length > 70 ? v.name.slice(0, 67) + '...' : v.name)}${v.progress ? ' · ' + esc(v.progress) : ''}${waiting.length ? ` · ${waiting.length} more waiting` : ''}</div>`;
   } else if (waiting.length) {
     live.hidden = false;
-    live.innerHTML = `<div><span class="step">Waiting to start</span></div><div class="prog">${waiting.length} video${waiting.length > 1 ? 's' : ''} in line${s.enabled ? '' : '. Turn AUTO on to process them.'}</div>`;
+    live.innerHTML = `<div><span class="step">Waiting to start</span></div><div class="prog">${waiting.length} video${waiting.length > 1 ? 's' : ''} in line${s.enabled ? '' : '. Press Start AI analysis to process them.'}</div>`;
   } else { live.hidden = true; live.innerHTML = ''; }
   tick();
   const sig = JSON.stringify([s.videos, s.channels, s.active_channel, s.memory, s.prompts, s.ratings, s.brain]);
@@ -608,7 +609,8 @@ function sendFile(f) {
   x.onerror = () => { st.textContent = 'failed'; st.style.color = 'var(--bad)'; };
   x.send(f);
 }
-const pick = files => { [...files].forEach(sendFile); say('Uploaded files are processed when AUTO is on.'); };
+const pick = files => { [...files].forEach(sendFile); say('Uploaded. Press Start AI analysis when you are ready.'); };
+$('analyze').onclick = async () => { try { const r = await api('analyze', {}); say('Started the AI analysis on ' + r.started + ' video' + (r.started > 1 ? 's' : '') + '.'); await load(); } catch (e) { say(e.message, true); } };
 $('drop').onclick = () => $('file').click();
 $('drop').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file').click(); } };
 $('file').onchange = e => { pick(e.target.files); e.target.value = ''; };

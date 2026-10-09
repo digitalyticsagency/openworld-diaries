@@ -44,9 +44,8 @@ def idle_video(vid):
     return v
 
 
-def poll_once():
-    if pipeline.youtube_on() and not db.get("active_channel"):
-        return
+def ingest():
+    """Add any new files from the watched folders to the list, as queued."""
     for folder in watched_folders():
         try:
             vids, _ = sources.list_videos(folder)
@@ -58,6 +57,12 @@ def poll_once():
                     and not db.get(f"ignored:{f['id']}"):
                 db.run("INSERT INTO videos(drive_id,name,status,created) VALUES(?,?,?,?)",
                        (f["id"], f["name"], "queued", time.time()))
+
+
+def poll_once():
+    if pipeline.youtube_on() and not db.get("active_channel"):
+        return
+    ingest()
     for v in db.rows("SELECT id FROM videos WHERE status='queued' ORDER BY id"):
         if db.get("enabled") != "1":
             return
@@ -246,6 +251,26 @@ def toggle(t: Toggle):
     if t.on:
         start_watcher()
     return {"enabled": t.on}
+
+
+@app.post("/api/analyze")
+def analyze():
+    """The Start button: pick up what was uploaded and run the AI analysis on it, one video at a time."""
+    if pipeline.youtube_on() and not db.get("active_channel"):
+        raise HTTPException(400, "Connect YouTube first, or switch YouTube publishing off.")
+    ingest()
+    ids = [v["id"] for v in db.rows("SELECT id FROM videos WHERE status='queued' ORDER BY id")]
+    if not ids:
+        raise HTTPException(400, "Nothing to analyse. Upload a video first.")
+
+    def go():
+        for i in ids:
+            with _busy:
+                v = db.one("SELECT status FROM videos WHERE id=?", (i,))
+                if v and v["status"] == "queued":
+                    pipeline.process(i)
+    threading.Thread(target=go, daemon=True).start()
+    return {"started": len(ids)}
 
 
 @app.post("/api/upload")
