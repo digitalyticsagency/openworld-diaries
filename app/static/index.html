@@ -167,7 +167,9 @@
       <label class="rad"><input type="radio" name="amtmode" value="manual" id="amt_manual"> <span><strong>Manual</strong> · aim for <input type="number" id="lpm" min="1" max="12" step="0.5" value="5" style="width:80px;display:inline-block;padding:6px 8px"> lines a minute, spoken lines plus silent thoughts, as far as the video's room allows</span></label>
     </fieldset>
     <fieldset class="grp"><legend>Pacing and what it reacts to</legend>
-      <label class="sw"><input type="checkbox" id="dayd" role="switch"><span><strong>Wistful daydreams during quiet travel</strong><br><span class="small">Only while walking or riding with nothing to react to: a private thought about a quiet future (a farm, a family someday). Generic, never naming a story character. Everywhere else it stays silent unless something real happens: a shop, an animal, a fight, a choice, or someone speaking to him.</span></span></label>
+      <label class="sw"><input type="checkbox" id="dayd" role="switch"><span><strong>Thoughts during quiet travel</strong><br><span class="small">Only while walking or riding with nothing to react to. The brain rotates five kinds: noticing something it really saw, how the trip feels (the hour, the weather, how long it has been), a warm thought about the horse, a memory of something earlier in the same video, and a wistful daydream (generic, never naming a story character). Everywhere else it stays silent unless something real happens: a shop, an animal, a fight, a choice, or someone speaking to him.</span></span></label>
+      <div class="row"><div><label for="tlpm">Travel thoughts a minute (0 = automatic, about one every 30 seconds)</label>
+        <input type="number" id="tlpm" min="0" max="6" step="0.5" value="0" style="width:110px"></div></div>
       <label class="sw"><input type="checkbox" id="know" role="switch"><span><strong>Use the game's knowledge pack</strong><br><span class="small">For Red Dead: shops, horse and animal care, hunting and predators, honor and conscience, the gang. Used only for what the scene confirms.</span></span></label>
       <label for="moral" style="margin-top:10px">Telling an innocent casualty from an outlaw getting justice</label>
       <select id="moral"><option value="both">The game's own cues first, then what the scan sees; unsure stays neutral</option><option value="cues">Only what the game itself shows (honor change, label, bounty); otherwise neutral</option></select>
@@ -251,7 +253,7 @@ const api = async (path, body) => {
   return j;
 };
 const say = (t, err) => { $('msg').textContent = t; $('msg').className = err ? 'err' : ''; };
-const OPEN = new Set();
+const OPEN = new Set(), ROPEN = new Set();
 let ready = false, lastSig = '';
 const LEVEL = n => n<=4 ? 'Sparse · only the strongest moments' : n<=7 ? 'Measured · strong moments and a few quiet thoughts' : 'Balanced to chatty · most meaningful moments, plus atmosphere in long silences';
 const WORKING = ['downloading','detecting','listening','watching','cutscenes','writing','voicing','captioning','uploading'];
@@ -283,7 +285,7 @@ function setAmount(n) {
 
 let ONEVOICE = true;
 function fillChannel(s) {
-  $('dayd').checked = s.daydream; $('know').checked = s.knowledge_on; $('moral').value = s.moral_mode;
+  $('dayd').checked = s.daydream; $('tlpm').value = s.travel_lpm || 0; $('know').checked = s.knowledge_on; $('moral').value = s.moral_mode;
   const c = s.channel; $('chname').value = c.channel; $('intro_on').checked = c.intro_on; $('outro_on').checked = c.outro_on; $('catch_on').checked = c.catch_on;
   $('intro_text').value = c.intro_text; $('outro_text').value = c.outro_text; $('catchphrases').value = c.catchphrases;
 }
@@ -351,7 +353,7 @@ function brainLine(v) {
   if (!v.stats || BUSYLIKE.includes(v.status)) return '';
   let st = {}; try { st = JSON.parse(v.stats); } catch (_) { return ''; }
   const r = v.density_rating;
-  return `<div class="prog">Found ${st.beats} emotional moments · ${st.gaps} usable gaps between speech (${st.micro_gaps} short) · ${st.planned} planned · ${st.lines} lines${st.silent ? ` (${st.lines - st.silent} spoken + ${st.silent} silent thoughts)` : ' spoken'}${st.filled ? ` (${st.filled} added by the self-check)` : ''}${st.lines < st.planned ? ` (${st.planned - st.lines} could not be written to fit)` : ''}${st.blocked_by_speech ? ` · ${st.blocked_by_speech} landed in speech` : ''}${st.knowledge ? ' · game knowledge on' : ''}${st.daydreams ? ` · ${st.daydreams} daydream${st.daydreams > 1 ? 's' : ''}` : ''}${st.speech_reactions ? ` · ${st.speech_reactions} reaction${st.speech_reactions > 1 ? 's' : ''} to what people said` : ''}${st.intro || st.outro ? ` · ${[st.intro && 'welcome', st.outro && 'outro'].filter(Boolean).join(' + ')}` : ''}${st.cutscenes ? ` · ${st.cutscenes} cutscene${st.cutscenes > 1 ? 's' : ''} (${fmtT(st.cutscene_seconds)}) left untouched${st.reactions ? `, ${st.reactions} short reaction${st.reactions > 1 ? 's' : ''} after` : ''}` : ''}${st.target_lpm ? ` · you asked for ${st.target_lpm} a minute, got ${st.per_minute}, and this video has room for at most ${st.possible_per_minute}` : ''} · eagerness ${st.eagerness}${st.slider != null ? ` (your slider ${st.slider}${st.learned ? `, learned ${st.learned > 0 ? '+' : ''}${st.learned}` : ''}${st.arm === 'more' || st.arm === 'less' ? `, A/B test ${st.arm}` : ''})` : ''}</div>
+  return `<div class="prog">Found ${st.beats} emotional moments · ${st.gaps} usable gaps between speech (${st.micro_gaps} short) · ${st.planned} planned · ${st.lines} lines${st.silent ? ` (${st.lines - st.silent} spoken + ${st.silent} silent thoughts)` : ' spoken'}${st.filled ? ` (${st.filled} added by the self-check)` : ''}${st.lines < st.planned ? ` (${st.planned - st.lines} could not be written to fit)` : ''}${st.blocked_by_speech ? ` · ${st.blocked_by_speech} landed in speech` : ''}${st.knowledge ? ' · game knowledge on' : ''}${st.daydreams ? ` · ${st.daydreams} travel thought${st.daydreams > 1 ? 's' : ''}` : ''}${st.speech_reactions ? ` · ${st.speech_reactions} reaction${st.speech_reactions > 1 ? 's' : ''} to what people said` : ''}${st.intro || st.outro ? ` · ${[st.intro && 'welcome', st.outro && 'outro'].filter(Boolean).join(' + ')}` : ''}${st.cutscenes ? ` · ${st.cutscenes} cutscene${st.cutscenes > 1 ? 's' : ''} (${fmtT(st.cutscene_seconds)}) left untouched${st.reactions ? `, ${st.reactions} short reaction${st.reactions > 1 ? 's' : ''} after` : ''}` : ''}${st.target_lpm ? ` · you asked for ${st.target_lpm} a minute, got ${st.per_minute}, and this video has room for at most ${st.possible_per_minute}` : ''} · eagerness ${st.eagerness}${st.slider != null ? ` (your slider ${st.slider}${st.learned ? `, learned ${st.learned > 0 ? '+' : ''}${st.learned}` : ''}${st.arm === 'more' || st.arm === 'less' ? `, A/B test ${st.arm}` : ''})` : ''}</div>
     <div class="acts"><span class="small">How was the amount of commentary?</span>
       <button class="s ${r===-1?'primary':''}" data-dens="${v.id}:-1">Too quiet</button>
       <button class="s ${r===0?'primary':''}" data-dens="${v.id}:0">Just right</button>
@@ -372,6 +374,7 @@ function card(v) {
     <div class="acts">
       ${v.has_video && !busy ? `<a class="s" href="/api/videos/${v.id}/download" download>Download video</a>` : ''}
       <button class="s" data-lines="${v.id}">Lines</button>
+      ${v.stats ? `<button class="s" data-report="${v.id}">Brain report</button>` : ''}
       ${v.has_video && !BUSYLIKE.includes(v.status) ? `<button class="s" data-cuts="${v.id}">Cutscenes${v.cut_count ? ' (' + v.cut_count + ')' : ''}</button>` : ''}
       ${!busy && v.has_video ? `
         <select data-regsel="${v.id}:amount" aria-label="Commentary amount"><option value="">Same eagerness</option><option value="4" ${r.amount==='4'?'selected':''}>Sparse</option><option value="8" ${r.amount==='8'?'selected':''}>Balanced</option><option value="10" ${r.amount==='10'?'selected':''}>Chatty</option></select>
@@ -387,7 +390,7 @@ function card(v) {
       ${v.status==='failed' ? `<button class="s" data-retry="${v.id}">Retry</button>` : ''}
       ${!busy ? `<button class="s danger" data-del="${v.id}">Delete</button>` : ''}
       <span class="small">${v.combined_score!=null ? 'score ' + v.combined_score.toFixed(1) : ''}</span>
-    </div>${styleHint(v)}${voicesLine(v)}${brainLine(v)}<div id="c${v.id}"></div><div id="l${v.id}"></div></div>`;
+    </div>${styleHint(v)}${voicesLine(v)}${brainLine(v)}<div id="c${v.id}"></div><div id="r${v.id}"></div><div id="l${v.id}"></div></div>`;
 }
 
 function renderVusers() {
@@ -445,6 +448,7 @@ async function load() {
     : '<option>No channel connected</option>';
   $('videos').innerHTML = s.videos.length ? s.videos.map(card).join('') : 'Nothing yet. Upload a video above.';
   for (const id of OPEN) showLines(id);
+  for (const id of ROPEN) showReport(id);
   for (const id of OPENC) showCuts(id);
   $('memory').innerHTML = s.memory.length ? s.memory.map(m =>
     `<div class="mem"><span>${esc(m.text)} <span class="small">${m.kind}${m.count>1 ? ' · seen ' + m.count + 'x' : ''}</span></span><button class="s danger" data-forget="${m.id}">Forget</button></div>`).join('')
@@ -472,6 +476,16 @@ async function showCuts(id) {
     <div class="small">After changing ranges, press <strong>Rebuild video</strong> (lines inside new cutscenes are dropped) or <strong>Regenerate commentary</strong> to plan again.</div></div>`;
 }
 
+async function showReport(id) {
+  const box = $('r' + id); if (!box) return;
+  let r; try { r = await api(`videos/${id}/report`); } catch (e) { box.innerHTML = `<div class="small">${esc(e.message)}</div>`; return; }
+  const sn = r.seen, tk = Object.entries(r.said.travel || {}).map(([k, n]) => `${n} ${k}`).join(', ');
+  box.innerHTML = `<div class="prog"><strong>What it saw:</strong> ${sn.frames} frames checked (${sn.busy_frames} in busy moments, ${sn.calm_frames} in calm ones). ${Object.entries(sn.activities).map(([k, n]) => `${esc(k)} ${n}`).join(' · ')}
+    <br><strong>What it said:</strong> ${r.said.voiced} spoken, ${r.said.silent} silent thoughts${tk ? `; travel thoughts: ${esc(tk)}` : ''}; ${r.removed} lines removed by the safety checks.</div>
+    <div class="prog"><strong>Key moments</strong></div>` +
+    r.moments.map(m => `<div class="ln"><span class="t">${mmss(m.t)}</span><span>${esc(m.what)}</span><span class="small">${esc(m.result)}</span></div>`).join('') +
+    (r.quiet.length ? `<div class="prog"><strong>Long quiet stretches</strong></div>` + r.quiet.map(q => `<div class="ln"><span class="t">${mmss(q.from)}</span><span class="small">until ${mmss(q.to)}: ${esc(q.why)}</span></div>`).join('') : '');
+}
 async function showLines(id) {
   const box = $('l' + id); if (!box) return;
   const ls = await api(`videos/${id}/lines`);
@@ -512,7 +526,7 @@ document.querySelectorAll('[data-cap]').forEach(el => el.onchange = async () => 
   try { await api('settings', { [el.dataset.cap]: el.value }); capNote(); refreshPreview(); say('Caption look saved. New videos use it; press Redo captions on a finished one.'); }
   catch (e) { say(e.message, true); } });
 $('cprevkind').onchange = refreshPreview;
-saveSetting('dayd', 'daydream', () => $('dayd').checked); saveSetting('know', 'knowledge_on', () => $('know').checked);
+saveSetting('dayd', 'daydream', () => $('dayd').checked); saveSetting('tlpm', 'travel_lpm', () => +$('tlpm').value || 0); saveSetting('know', 'knowledge_on', () => $('know').checked);
 saveSetting('moral', 'moral_mode', () => $('moral').value); saveSetting('chname', 'channel_name', () => $('chname').value);
 saveSetting('intro_on', 'intro_on', () => $('intro_on').checked); saveSetting('outro_on', 'outro_on', () => $('outro_on').checked);
 saveSetting('catch_on', 'catch_on', () => $('catch_on').checked); saveSetting('intro_text', 'intro_text', () => $('intro_text').value);
@@ -544,6 +558,7 @@ document.addEventListener('click', async e => {
   const d = e.target.dataset;
   try {
     if (d.preset) { setAmount(+d.preset); await api('settings', { amount: +d.preset }); say('Commentary amount saved.'); }
+    if (d.report) { const id = +d.report; ROPEN.has(id) ? ROPEN.delete(id) : ROPEN.add(id); if (ROPEN.has(id)) showReport(id); else $('r'+id).innerHTML=''; }
     if (d.lines) { const id = +d.lines; OPEN.has(id) ? OPEN.delete(id) : OPEN.add(id); if (OPEN.has(id)) showLines(id); else $('l'+id).innerHTML=''; }
     if (d.approve && confirm('Make this video public on YouTube?')) { await api(`videos/${d.approve}/approve`, {}); say('Published.'); await refresh(); }
     if (d.retry) { await api(`videos/${d.retry}/retry`, {}); await refresh(); }

@@ -6,8 +6,9 @@ import traceback
 from pathlib import Path
 
 from . import (beats, captions, channel, cutscenes, db, detect, evolve, gaps, guard, memory, publisher, scenes, sentiment,
-               sources, styles, transcript, voice, writer)
-from .config import DATA, MIN_GAP_FLOOR
+               sources, styles, transcript, travel, voice, writer)
+from . import report as brain_report
+from .config import DATA, MIN_GAP_FLOOR, TRAVEL_GAP_DEFAULT, TRAVEL_GAP_MIN
 
 
 def options():
@@ -32,6 +33,15 @@ def video_opts(v):
 def moral_mode():
     """'both': the game's own cues first, then what the scan sees. 'cues': only what the game itself shows."""
     return "cues" if db.get("moral_mode", "both") == "cues" else "both"
+
+
+def travel_gap():
+    """Seconds between thoughts in pure walking or riding: from the travel pace slider (thoughts a minute), else the default."""
+    try:
+        v = float(db.get("travel_lpm", "") or 0)
+    except ValueError:
+        v = 0
+    return max(TRAVEL_GAP_MIN, 60.0 / v) if v > 0 else TRAVEL_GAP_DEFAULT
 
 
 def daydream_on():
@@ -130,15 +140,15 @@ def drop_in_blocks(lines, blocks):
     return n
 
 
-def plan_commentary(all_beats, free, windows, length, eager, target, silent_on, extra=(), quiet_fn=None):
+def plan_commentary(all_beats, free, windows, length, eager, target, silent_on, extra=(), quiet_fn=None, travel_gap=None):
     """Pick what to say and where. With a manual target the possible spots are built at full eagerness, so
     the target can actually be reached; the result also says what the video's room allows at most."""
     supply = max(eager, 15.0) if target else eager
-    opps, blocked = beats.opportunities(all_beats, free, length, supply, quiet_fn)
+    opps, blocked = beats.opportunities(all_beats, free, length, supply, quiet_fn, travel_gap)
     opps = sorted(opps + list(extra), key=lambda o: o["t"])
     silent = beats.silent_opportunities(all_beats, windows, length, supply) if silent_on else []
     chosen = beats.plan(opps, silent, eager, length, target)
-    most = beats.plan(*[beats_ for beats_ in (beats.opportunities(all_beats, free, length, 15.0, quiet_fn)[0] + list(extra),
+    most = beats.plan(*[beats_ for beats_ in (beats.opportunities(all_beats, free, length, 15.0, quiet_fn, travel_gap)[0] + list(extra),
                                               beats.silent_opportunities(all_beats, windows, length, 15.0) if silent_on else [])],
                       15.0, length, 999)
     return chosen, blocked, round(len(most) / (length / 60.0), 1)
@@ -336,8 +346,9 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     arm, offset = evolve.choose_arm(explicit)
     eager = amt + evolve.density_bias(opts["pack"]) + offset
     chosen, blocked, possible = plan_commentary(all_beats, free, cutscenes.subtract_ranges(speech, blocks), length,
-                                                eager, target_lpm(), cap_commentary(), extra=extra, quiet_fn=quiet_fn)
-    channel.assign_themes(chosen)
+                                                eager, target_lpm(), cap_commentary(), extra=extra, quiet_fn=quiet_fn,
+                                                travel_gap=travel_gap())
+    travel_kinds = travel.assign(chosen, notes)
     n_catch = channel.assign_catchphrases(chosen, cfg["phrases"], length, vid) if cfg["catch_on"] else 0
     db.run("UPDATE videos SET arm=? WHERE id=?", (arm, vid))
 
@@ -358,9 +369,14 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
         "cutscenes": len(cuts), "cutscene_seconds": cutscenes.total_seconds(cuts), "reactions": len(after),
         "daydreams": sum(1 for l in lines if "daydream" in (l.get("beat_kinds") or "")),
         "intro": any(l.get("opp_id") == "intro" for l in lines), "outro": any(l.get("opp_id") == "outro" for l in lines),
-        "catchphrases": n_catch, "speech_reactions": sum(1 for l in lines if "npc_" in (l.get("beat_kinds") or "")),
+        "travel": travel_kinds, "travel_gap": travel_gap(), "catchphrases": n_catch, "speech_reactions": sum(1 for l in lines if "npc_" in (l.get("beat_kinds") or "")),
         "knowledge": bool(opts.get("knowledge")) and bool(__import__("app.knowledge", fromlist=["x"]).name_for_game(opts["game"]))}), vid))
     (work / "dropped.json").write_text(json.dumps(dropped, indent=2))
+    try:
+        (work / "report.json").write_text(json.dumps(brain_report.build(
+            notes, lines, dropped, all_beats, blocked, length, speech, cuts, travel_kinds), indent=2))
+    except Exception:
+        traceback.print_exc()   # the report is a courtesy and must never break a video
 
     set_status(vid, "voicing")
     clips = voice.make_clips(lines, windows, system, work, pack=opts["pack"],

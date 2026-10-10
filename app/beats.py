@@ -3,7 +3,7 @@ the strongest ones for the current eagerness. Pure functions, no network."""
 import re
 
 from . import gaps as gapmod
-from .config import AFTER_CUT_MIN, DAYDREAM_SPACING, MIN_GAP_FLOOR, READ_LEAD, READ_WORDS_PER_SEC, REACTION_WINDOW, SILENT_MAX_WORDS, TAIL
+from .config import AFTER_CUT_MIN, DAYDREAM_SPACING, MIN_GAP_FLOOR, READ_LEAD, READ_WORDS_PER_SEC, REACTION_WINDOW, SILENT_MAX_WORDS, TAIL, TRAVEL_GAP_MIN
 
 MUST_FIT_WORDS = 9    # the welcome and the outro always keep room for at least this many words
 MIN_START_SPACING = MIN_GAP_FLOOR + 2.0   # room for the floor of silence plus a 3-word line
@@ -133,7 +133,7 @@ def find_beats(scenes, kw=None, moral_mode="both"):
     return beats
 
 
-def opportunities(beats, gaps, length, eager=6.0, quiet_fn=None):
+def opportunities(beats, gaps, length, eager=6.0, quiet_fn=None, travel_gap=None):
     """Turn beats into places a line can actually go, plus atmosphere spots in long silences."""
     opps, blocked = [], []
     for i, b in enumerate(beats):
@@ -151,11 +151,12 @@ def opportunities(beats, gaps, length, eager=6.0, quiet_fn=None):
                      "kinds": b["kinds"], "why": b["why"], "max_words": mw, "max_duration": round(cap, 2),
                      "kind": "micro" if mw < 9 else "full"})
     step = max(10.0, min(45.0, 70.0 - 6.0 * eager))   # more eager: atmosphere spots come closer together
+    tgap = max(TRAVEL_GAP_MIN, travel_gap or DAYDREAM_SPACING)
     for j, g in enumerate(gaps):
         span = g["end"] - g["start"]
         if span < (20 if eager < 8.5 else 8):          # at high eagerness even short gaps may host a line
             continue
-        n = max(1, int(span // step))
+        n = max(1, int(span // (tgap if quiet_fn is not None else step)))
         for k in range(n):
             pos = g["start"] + (k + 1) * span / (n + 1)
             cap = min(g["end"] - pos - TAIL, 12.0)
@@ -172,7 +173,8 @@ def opportunities(beats, gaps, length, eager=6.0, quiet_fn=None):
                              "salience": round(4.2 + min(span / 50, 1.0), 2), "kinds": ["daydream"],
                              "why": "Quiet travel: nothing is happening and nobody is near. A wistful private thought "
                                     "about a quiet future. Keep it generic and never name a real character.",
-                             "max_words": min(mw, 16), "max_duration": round(cap, 2), "kind": "daydream"})
+                             "max_words": min(mw, 16), "max_duration": round(cap, 2), "kind": "daydream",
+                             "spacing": tgap})
     opps.sort(key=lambda o: o["t"])
     return opps, blocked
 
@@ -188,7 +190,7 @@ def base_gap(eager):
 def _need(o, eager):
     """Stronger moments are allowed to follow each other more closely; daydreams never crowd each other."""
     need = max(MIN_START_SPACING, base_gap(eager) * (1 - 0.06 * o["salience"]))
-    return max(need, DAYDREAM_SPACING) if o.get("kind") == "daydream" else need
+    return max(need, o.get("spacing", DAYDREAM_SPACING)) if o.get("kind") == "daydream" else need
 
 
 def select(opps, eager, length):
@@ -206,7 +208,7 @@ def select(opps, eager, length):
         if gap_b - gap_a <= max_silence:
             break
         pool = [o for o in opps if o not in chosen and gap_a + 5 <= o["t"] <= gap_b - 5
-                and all(abs(o["t"] - c["t"]) >= (DAYDREAM_SPACING if o.get("kind") == "daydream" else MIN_START_SPACING)
+                and all(abs(o["t"] - c["t"]) >= (o.get("spacing", DAYDREAM_SPACING) if o.get("kind") == "daydream" else MIN_START_SPACING)
                         for c in chosen)]
         if not pool:
             break

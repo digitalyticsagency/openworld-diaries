@@ -18,6 +18,9 @@ CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-5-5")
 ELEVEN_MODEL = os.environ.get("ELEVEN_MODEL", "eleven_multilingual_v2")
 
 FRAME_EVERY = 3          # seconds between sampled frames
+SCAN_FINE = 2.0         # busiest moments are scanned this often, seconds
+SCAN_CALM = 6.0         # quiet stretches are scanned this often at most
+SCAN_BUSY_SHARE = 0.35  # share of the video that counts as busy, judged by how much the picture changes
 FRAME_BATCH = 10         # frames per Gemini call
 WINDOW_SECONDS = 300     # video chunk size sent to Claude
 SPEECH_BUFFER = 1.5      # silence kept around any speech, seconds
@@ -56,3 +59,7 @@ AFTER_CUT_MIN = 8.0          # a cutscene this long earns a short reaction when 
 
 # pacing and moral logic
 DAYDREAM_SPACING = 20.0      # a quiet-travel daydream is never closer than this to another daydream
+
+# travel thoughts
+TRAVEL_GAP_DEFAULT = 32.0    # seconds between thoughts in pure walking or riding, when the user has not set a pace
+TRAVEL_GAP_MIN = 10.0        # never closer than this, whatever the slider says

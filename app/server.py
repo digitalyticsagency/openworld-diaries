@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 import subprocess
 import threading
 import time
@@ -136,6 +137,7 @@ class Settings(BaseModel):
     cap_commentary: bool | None = None
     cap_dialogue: bool | None = None
     target_lpm: float | None = None
+    travel_lpm: float | None = None
     personality: str | None = None
     learn: bool | None = None
     amount: int | None = None
@@ -222,6 +224,7 @@ def state():
         "cap_commentary": pipeline.cap_commentary(),
         "cap_dialogue": pipeline.cap_dialogue(),
         "target_lpm": pipeline.target_lpm() or 0,
+        "travel_lpm": round(60.0 / pipeline.travel_gap(), 2) if db.get("travel_lpm") else 0,
         "personality": styles.personality_id(db.get("personality")),
         **styles.catalog(),
         "amount": pipeline.amount(),
@@ -326,6 +329,8 @@ def settings(s: Settings):
         elif k == "cap_size":
             if v not in captions.SIZES:
                 raise HTTPException(400, "Unknown caption size.")
+        elif k == "travel_lpm":
+            v = "" if v <= 0 else min(6.0, v)    # 0 means automatic: one thought every 25-40 seconds
         elif k == "target_lpm":
             v = "" if v <= 0 else min(12.0, v)   # 0 means automatic: the emotion beats decide
         db.put(k, v)
@@ -352,6 +357,14 @@ def channel(c: Channel):
 def lines(vid: int):
     return db.rows("SELECT id,start,persona,tone,emotion,line,self_score,thumb,"
                    "COALESCE(dropped,0) dropped, COALESCE(silent,0) silent, note FROM lines WHERE video_id=? ORDER BY start", (vid,))
+
+
+@app.get("/api/videos/{vid}/report")
+def brain_report(vid: int):
+    f = pipeline.workdir(vid) / "report.json"
+    if not f.exists():
+        raise HTTPException(404, "No brain report yet. It is written each time commentary is generated, so use Regenerate commentary.")
+    return json.loads(f.read_text())
 
 
 @app.post("/api/videos/{vid}/approve")
