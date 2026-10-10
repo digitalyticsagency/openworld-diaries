@@ -5,7 +5,7 @@ from pathlib import Path
 
 import requests
 
-from . import guard, voices
+from . import guard, llm, voices
 from .config import MAX_WORDS, WORDS_PER_SEC
 from .llm import claude
 
@@ -28,7 +28,7 @@ def tts(text, voice_id, emotion, out):
     body = {"text": text, "model_id": os.environ.get("ELEVEN_MODEL", "eleven_multilingual_v2"),
             "voice_settings": _settings(emotion), "seed": VOICE_SEED}   # a fixed seed keeps takes repeatable
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-    headers = {"xi-api-key": os.environ["ELEVENLABS_API_KEY"]}
+    headers = {"xi-api-key": llm.key("ELEVENLABS_API_KEY")}
     r = requests.post(url, headers=headers, json=body, timeout=120)
     if r.status_code == 422 and "seed" in r.text:       # a model that does not take a seed
         body.pop("seed")

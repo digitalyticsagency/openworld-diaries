@@ -4,7 +4,7 @@ import time
 
 import requests
 
-from . import db, styles
+from . import db, llm, styles
 
 _cache = {"at": 0, "voices": []}
 
@@ -37,7 +37,7 @@ def list_voices():
     if _cache["voices"] and time.time() - _cache["at"] < 600:
         return _cache["voices"]
     r = requests.get("https://api.elevenlabs.io/v2/voices", params={"page_size": 100},
-                     headers={"xi-api-key": os.environ["ELEVENLABS_API_KEY"]}, timeout=30)
+                     headers={"xi-api-key": llm.key("ELEVENLABS_API_KEY")}, timeout=30)
     r.raise_for_status()
     _cache["voices"] = [{"id": v["voice_id"], "name": v["name"], "category": v.get("category")}
                         for v in r.json().get("voices", [])]
@@ -47,7 +47,7 @@ def list_voices():
 
 def preview(voice_id, text):
     r = requests.post(f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
-                      headers={"xi-api-key": os.environ["ELEVENLABS_API_KEY"]},
+                      headers={"xi-api-key": llm.key("ELEVENLABS_API_KEY")},
                       json={"text": text[:200], "model_id": os.environ.get("ELEVEN_MODEL", "eleven_multilingual_v2")},
                       timeout=60)
     r.raise_for_status()

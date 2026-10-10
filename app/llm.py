@@ -2,6 +2,15 @@ import json
 import os
 import re
 
+LABELS = {"GEMINI_API_KEY": "Gemini", "ANTHROPIC_API_KEY": "Claude", "ELEVENLABS_API_KEY": "ElevenLabs"}
+
+
+def key(name):
+    """The saved key, or a plain message saying where to add it."""
+    v = os.environ.get(name)
+    if not v:
+        raise RuntimeError(f"The {LABELS.get(name, name)} key is not set. Add it in API keys at the top of the app, then press Retry.")
+    return v
 
 
 _ESCAPE = re.compile(r'(\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))|\\')
@@ -19,7 +28,7 @@ def parse_json(text):
 
 def claude(system, user, max_tokens=8000):
     import anthropic
-    r = anthropic.Anthropic().messages.create(
+    r = anthropic.Anthropic(api_key=key("ANTHROPIC_API_KEY")).messages.create(
         model=os.environ.get("CLAUDE_MODEL", "claude-opus-5-5"), max_tokens=max_tokens, system=system,
         messages=[{"role": "user", "content": user}])
     return "".join(b.text for b in r.content if getattr(b, "type", "") == "text")
@@ -29,7 +38,7 @@ def gemini_json(parts):
     """parts: list of str or (bytes, mime_type). Returns parsed JSON."""
     from google import genai
     from google.genai import types
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    client = genai.Client(api_key=key("GEMINI_API_KEY"))
     contents = [types.Part.from_bytes(data=p[0], mime_type=p[1]) if isinstance(p, tuple) else p
                 for p in parts]
     last = None

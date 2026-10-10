@@ -168,5 +168,17 @@ class BrainReportTests(unittest.TestCase):
         self.assertEqual(c.get("/api/state").json()["travel_lpm"], 0)
 
 
+class MissingKeyTests(unittest.TestCase):
+    def test_a_missing_key_says_where_to_add_it_instead_of_a_bare_keyerror(self):
+        from unittest import mock
+        from app import llm
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("GEMINI_API_KEY", None)
+            with self.assertRaises(RuntimeError) as cm:
+                llm.key("GEMINI_API_KEY")
+        self.assertIn("Gemini key is not set", str(cm.exception))
+        self.assertIn("API keys", str(cm.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
