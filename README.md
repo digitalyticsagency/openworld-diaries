@@ -42,6 +42,20 @@ Drive folder ──► download ──► transcript (who speaks, when) ──�
 - **Continuity.** Each part of the video is told it is one continuous piece, what was already said, and how earlier lines started, and any repeated line is removed.
 - **Game knowledge.** For Red Dead: shops and trading, horse and animal care, hunting and predators, honor and the gang, written down in `prompts/knowledge/rdr2.md`. Used only for what the scene confirms. Videos scanned before these details existed show a **Scan again for new details** button.
 
+## Thinking while travelling
+When he is only walking or riding, with nothing and nobody to react to, the brain has a thought every so often. It rotates five kinds, never the same kind twice in a row:
+- **Noticing:** something the scan really saw (a landmark, an animal, the weather).
+- **Mood:** how the trip feels, worked out by code from the hour, the weather, how long he has ridden without a stop and what just happened (a knock, a win).
+- **Horse:** a short warm thought, only while riding, from the pace and the horse's state in the scan.
+- **Memory:** something that happened earlier in the same video, tied to a real event time so the guard can check it.
+- **Wistful:** a generic daydream about a quiet future, never naming a story character.
+
+A kind with no real facts behind it is skipped. **Travel thoughts a minute** in Voice settings sets the pace (0 = automatic, about one every 30 seconds, never closer than 10).
+
+The scan is adaptive: the busiest third of a video is looked at every 2 seconds, quiet stretches every 6 (busy means the picture changes a lot). Scans started before this keep their old 3 second grid so they can resume.
+
+Each finished video has a **Brain report**: what it saw, what it said, how each of the biggest moments ended (said, silent because someone was speaking, removed by a check, or not strong enough), and why each long quiet stretch was quiet.
+
 ## Caption looks
 
 Dialogue subtitles and the inner voice each have their own style and position, chosen in Voice with a live preview on a frame of your own video.
