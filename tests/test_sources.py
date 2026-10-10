@@ -38,6 +38,12 @@ class LocalSourceTests(unittest.TestCase):
         self.assertEqual([v["name"] for v in vids], ["run1.mp4"])
         self.assertIn("run1", subs)
 
+    def test_start_button_does_not_wait_for_a_fresh_upload_to_settle(self):
+        self.touch("fresh.mp4", age=1)
+        self.assertEqual(sources.list_videos(str(self.d))[0], [])
+        vids, _ = sources.list_videos(str(self.d), settle=0)
+        self.assertEqual([v["name"] for v in vids], ["fresh.mp4"])
+
     def test_fetch_and_read(self):
         v = self.touch("a.mp4")
         s = self.touch("a.srt")

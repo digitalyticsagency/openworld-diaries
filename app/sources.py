@@ -33,7 +33,7 @@ def normalize(value):
     return str(Path(value).expanduser()) if is_local(value) else drive.folder_id(value)
 
 
-def list_videos(value):
+def list_videos(value, settle=SETTLE_SECONDS):
     """Return (videos, sidecars): videos [{id,name}], sidecars {stem: id}."""
     if not is_local(value):
         vids, subs = drive.videos_and_sidecars(value)
@@ -47,7 +47,7 @@ def list_videos(value):
         if p.name.startswith(".") or not p.is_file():
             continue
         ext = p.suffix.lower()
-        if ext in VIDEO_EXT and now - p.stat().st_mtime > SETTLE_SECONDS:
+        if ext in VIDEO_EXT and now - p.stat().st_mtime > settle:
             vids.append({"id": str(p), "name": p.name})
         elif ext in SUB_EXT:
             subs[p.stem] = str(p)

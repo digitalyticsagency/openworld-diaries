@@ -44,11 +44,11 @@ def idle_video(vid):
     return v
 
 
-def ingest():
+def ingest(settle=sources.SETTLE_SECONDS):
     """Add any new files from the watched folders to the list, as queued."""
     for folder in watched_folders():
         try:
-            vids, _ = sources.list_videos(folder)
+            vids, _ = sources.list_videos(folder, settle)
         except Exception as e:
             print("cannot read folder", folder, e)
             continue
@@ -258,7 +258,7 @@ def analyze():
     """The Start button: pick up what was uploaded and run the AI analysis on it, one video at a time."""
     if pipeline.youtube_on() and not db.get("active_channel"):
         raise HTTPException(400, "Connect YouTube first, or switch YouTube publishing off.")
-    ingest()
+    ingest(settle=0)   # the user says go: uploads are complete, so do not wait for them to settle
     ids = [v["id"] for v in db.rows("SELECT id FROM videos WHERE status='queued' ORDER BY id")]
     if not ids:
         raise HTTPException(400, "Nothing to analyse. Upload a video first.")
