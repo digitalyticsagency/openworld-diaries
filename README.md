@@ -91,6 +91,12 @@ Under **Voices**, "A voice for each character" lets Arthur Morgan and John Marst
 
 Each of them also has his own ten daydream themes (Arthur: a cabin by a lake, a horse he never has to sell, a quiet porch; John: a ranch with a fence line of his own, a table with his family at it, teaching a boy to ride). They stay generic: real names are still never used in a daydream.
 
+## Background ambience and the game's own audio
+Under Voice settings, **Sound**:
+- **Background ambience for Red Dead and GTA** (off by default): a very quiet bed that fits the scene under the game audio: a campfire at night, wind over snow, rain, fog, swamp, desert, a town for Red Dead; city traffic, a night city, a highway, a beach, countryside, rain on asphalt for GTA. It is placed only in quiet moments (travel or camp, nobody near, no fight, no chase), never over in-game speech or a cutscene, and fades in and out. The beds are short ElevenLabs sound effects, made once and kept for every later video. Other games get nothing. If a bed cannot be made, the video is made without it, and the Brain report says why.
+- **The game's own audio:** a slider from 100% (as recorded) down to 0% (removed), for any game.
+Both apply to new videos and to Rebuild video.
+
 ## Caption looks
 
 Dialogue subtitles and the inner voice each have their own style and position, chosen in Voice with a live preview on a frame of your own video.

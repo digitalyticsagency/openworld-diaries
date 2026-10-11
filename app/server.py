@@ -124,6 +124,8 @@ class Settings(BaseModel):
     daydream: bool | None = None
     hook_on: bool | None = None
     series_on: bool | None = None
+    ambience_on: bool | None = None
+    game_audio: int | None = None
     series_name: str | None = None
     cliff_on: bool | None = None
     intro_on: bool | None = None
@@ -223,6 +225,7 @@ def state():
         "cutscene_quiet": pipeline.cutscene_quiet(),
         "one_voice": pipeline.one_voice(),
         "daydream": pipeline.daydream_on(),
+        "ambience_on": pipeline.ambience_on(), "game_audio": int(round(pipeline.game_audio_level() * 100)),
         "series_on": series.enabled(), "series_name": series.name(),
         "moral_mode": pipeline.moral_mode(),
         "knowledge_on": db.get("knowledge_on", "1") == "1",
@@ -325,8 +328,10 @@ def settings(s: Settings):
         elif k == "personality":
             v = styles.personality_id(v)
         elif k in ("youtube_publish", "learn", "ask_style", "ab_test", "cap_commentary", "cap_dialogue", "cutscene_quiet", "one_voice",
-                    "daydream", "intro_on", "outro_on", "catch_on", "knowledge_on", "hook_on", "cliff_on", "series_on"):
+                    "daydream", "intro_on", "outro_on", "catch_on", "knowledge_on", "hook_on", "cliff_on", "series_on", "ambience_on"):
             v = "1" if v else "0"
+        elif k == "game_audio":
+            v = max(0, min(100, v))
         elif k == "amount":
             v = max(1, min(10, v))
         elif k == "moral_mode":
@@ -526,6 +531,8 @@ def brain_report(vid: int):
         raise HTTPException(404, "No brain report yet. It is written each time commentary is generated, so use Regenerate commentary.")
     out = json.loads(f.read_text())
     ch = pipeline.workdir(vid) / "chapters.json"
+    amb = pipeline.workdir(vid) / "ambience.json"
+    out["ambience"] = json.loads(amb.read_text()) if amb.exists() else None
     out["chapters"] = json.loads(ch.read_text()) if ch.exists() else {"chapters": [], "text": ""}
     return out
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from . import (beats, captions, channel, cutscenes, db, detect, evolve, gaps, guard, memory, publisher, scenes, sentiment,
                sources, styles, transcript, travel, voice, writer)
 from . import report as brain_report
-from . import clips as clipmod
+from . import ambience, clips as clipmod
 from . import knowledge
 from . import packaging, series, thumbnail, viral
 from .config import DATA, MIN_GAP_FLOOR, TRAVEL_GAP_DEFAULT, TRAVEL_GAP_MIN
@@ -168,11 +168,46 @@ def plan_commentary(all_beats, free, windows, length, eager, target, silent_on, 
     return chosen, blocked, round(len(most) / (length / 60.0), 1)
 
 
+def ambience_on():
+    return db.get("ambience_on", "0") == "1"
+
+
+def game_audio_level():
+    """How loud the game's own audio is in the finished video: 1.0 as recorded, 0.0 silent."""
+    try:
+        return max(0.0, min(1.0, int(float(db.get("game_audio", "100"))) / 100.0))
+    except ValueError:
+        return 1.0
+
+
+def _ambience(vid, segs, blocks):
+    """The quiet background beds for this video, [(start, end, file)]. Opt-in, only for Red Dead and GTA, and never allowed to
+    break a video: if a bed cannot be made, the video is simply made without it."""
+    work = workdir(vid)
+    note = {"on": ambience_on(), "segments": [], "error": None}
+    out = []
+    try:
+        v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
+        fam = ambience.family_for(video_opts(v)["game"]) if ambience_on() else None
+        if fam:
+            notes, _ = _load(vid)
+            windows = cutscenes.merge([list(w) for w in guard.speech_windows(segs)] + [list(b) for b in (blocks or [])])
+            plan = ambience.plan(notes, scenes.video_length(work / "source.mp4"), windows, fam)
+            out = ambience.prepare(plan, fam, DATA / "ambience")
+            note["segments"] = plan
+    except Exception as e:
+        traceback.print_exc()
+        note["error"] = f"{type(e).__name__}: {e}"[:300]
+        out = []
+    (work / "ambience.json").write_text(json.dumps(note, indent=2))
+    return out
+
+
 def _finish(vid, lines, clips, segs, src, blocks=None):
     """Mix the voice into the game audio, then burn the captions on top."""
     work = workdir(vid)
     mixed = work / "mixed.mp4"
-    voice.mix(src, clips, mixed)
+    voice.mix(src, clips, mixed, ambience=_ambience(vid, segs, blocks), game_level=game_audio_level())
     set_status(vid, "captioning")
     secs = {round(s, 2): d for s, _, d in clips}
     com = captions.commentary_items(lines, secs) if cap_commentary() else []

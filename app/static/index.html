@@ -190,6 +190,12 @@
     </fieldset>
     <fieldset class="grp"><legend>Voice</legend>
       <label class="sw"><input type="checkbox" id="onev" role="switch"><span><strong>One consistent voice for all commentary</strong><br><span class="small">Every line is spoken in the Character voice of the genre style (for Red Dead, that is Arthur), written in the first person, with each line brought to the same loudness. Turn it off to alternate between the Player, Character and Companion voices.</span></span></label>
+    <fieldset class="grp"><legend>Sound</legend>
+      <label class="sw"><input type="checkbox" id="amb_on" role="switch"><span><strong>Background ambience for Red Dead and GTA</strong><br><span class="small">Off by default. Adds a very quiet bed that fits the scene (a campfire at night, wind over snow, rain, a town, city traffic, a beach) under the game audio, only in quiet moments: travel or camp with nothing happening. Never during a fight, a chase, in-game speech or a cutscene. The beds are made once with ElevenLabs sound effects (a few credits each) and kept for every later video. It applies to new videos and to Rebuild video.</span></span></label>
+      <label for="game_audio" style="margin-top:10px">The game's own audio: <strong id="game_audio_val">100%</strong></label>
+      <input type="range" id="game_audio" min="0" max="100" step="5" value="100" aria-describedby="game_audio_note">
+      <p class="small" id="game_audio_note">100% leaves it as recorded. Lower it to let the voice carry the video; 0% removes the game's audio entirely. Applies to new videos and to Rebuild video.</p>
+    </fieldset>
     </fieldset>
     <fieldset class="grp"><legend>Cutscenes</legend>
       <label class="sw"><input type="checkbox" id="cutq" role="switch"><span><strong>Stay silent and hide every caption during cutscenes</strong><br><span class="small">Cinematics are found from their black bars and from the scan. When it cannot tell, it assumes a cutscene. Right after a cutscene ends there is one short reaction. You can correct the ranges on each video.</span></span></label>
@@ -300,7 +306,7 @@ function setAmount(n) {
 let ONEVOICE = true;
 function fillChannel(s) {
   $('dayd').checked = s.daydream; $('tlpm').value = s.travel_lpm || 0; $('know').checked = s.knowledge_on; $('moral').value = s.moral_mode;
-  const c = s.channel; $('chname').value = c.channel; $('series_on').checked = s.series_on; $('series_name').value = s.series_name; $('hook_on').checked = c.hook_on; $('cliff_on').checked = c.cliff_on; $('intro_on').checked = c.intro_on; $('outro_on').checked = c.outro_on; $('catch_on').checked = c.catch_on;
+  const c = s.channel; $('chname').value = c.channel; $('amb_on').checked = s.ambience_on; $('game_audio').value = s.game_audio; $('game_audio_val').textContent = s.game_audio + '%'; $('series_on').checked = s.series_on; $('series_name').value = s.series_name; $('hook_on').checked = c.hook_on; $('cliff_on').checked = c.cliff_on; $('intro_on').checked = c.intro_on; $('outro_on').checked = c.outro_on; $('catch_on').checked = c.catch_on;
   $('intro_text').value = c.intro_text; $('outro_text').value = c.outro_text; $('catchphrases').value = c.catchphrases;
 }
 const saveSetting = (id, key, get) => { $(id).onchange = async () => { try { await api('settings', { [key]: get() }); say('Saved. It applies to new and regenerated videos.'); } catch (e) { say(e.message, true); } }; };
@@ -556,6 +562,7 @@ async function showReport(id) {
     <br><strong>What it said:</strong> ${r.said.voiced} spoken, ${r.said.silent} silent thoughts${tk ? `; travel thoughts: ${esc(tk)}` : ''}; ${r.removed} lines removed by the safety checks.</div>
     <div class="prog"><strong>Key moments</strong></div>` +
     r.moments.map(m => `<div class="ln"><span class="t">${mmss(m.t)}</span><span>${esc(m.what)}</span><span class="small">${esc(m.result)}</span></div>`).join('') +
+    (r.ambience && r.ambience.on ? `<div class="prog"><strong>Ambience</strong> ${r.ambience.error ? `<span class="small">not added: ${esc(r.ambience.error)}</span>` : r.ambience.segments.length ? `<span class="small">${r.ambience.segments.length} quiet stretches: ${esc([...new Set(r.ambience.segments.map(x => x.bed.replace('_', ' ')))].join(', '))}</span>` : '<span class="small">none: this game has no ambience set, or no quiet stretch was long enough</span>'}</div>` : '') +
     (r.chapters && r.chapters.chapters.length ? `<div class="prog"><strong>Chapters for the YouTube description</strong> <button class="s" data-copychap="${id}">Copy</button></div><pre class="small" id="ch${id}" style="white-space:pre-wrap">${esc(r.chapters.text)}</pre>` : '') +
     (r.quiet.length ? `<div class="prog"><strong>Long quiet stretches</strong></div>` + r.quiet.map(q => `<div class="ln"><span class="t">${mmss(q.from)}</span><span class="small">until ${mmss(q.to)}: ${esc(q.why)}</span></div>`).join('') : '');
 }
@@ -601,6 +608,7 @@ document.querySelectorAll('[data-cap]').forEach(el => el.onchange = async () => 
 $('cprevkind').onchange = refreshPreview;
 saveSetting('dayd', 'daydream', () => $('dayd').checked); saveSetting('tlpm', 'travel_lpm', () => +$('tlpm').value || 0); saveSetting('know', 'knowledge_on', () => $('know').checked);
 saveSetting('moral', 'moral_mode', () => $('moral').value); saveSetting('chname', 'channel_name', () => $('chname').value);
+saveSetting('amb_on', 'ambience_on', () => $('amb_on').checked); saveSetting('game_audio', 'game_audio', () => +$('game_audio').value); $('game_audio').oninput = () => { $('game_audio_val').textContent = $('game_audio').value + '%'; };
 saveSetting('series_on', 'series_on', () => $('series_on').checked); saveSetting('series_name', 'series_name', () => $('series_name').value); saveSetting('hook_on', 'hook_on', () => $('hook_on').checked); saveSetting('cliff_on', 'cliff_on', () => $('cliff_on').checked); saveSetting('intro_on', 'intro_on', () => $('intro_on').checked); saveSetting('outro_on', 'outro_on', () => $('outro_on').checked);
 saveSetting('catch_on', 'catch_on', () => $('catch_on').checked); saveSetting('intro_text', 'intro_text', () => $('intro_text').value);
 saveSetting('outro_text', 'outro_text', () => $('outro_text').value); saveSetting('catchphrases', 'catchphrases', () => $('catchphrases').value);

@@ -18,6 +18,7 @@ STRONG = guard.STRONG_EMOTIONS
 VOICE_SEED = int(os.environ.get("ELEVEN_SEED", "20241009"))
 TARGET_MEAN_DB = -17.0   # every spoken line is brought to about this average level
 MAX_BOOST_DB = 24.0      # some takes arrive very quiet
+FADE = 1.5               # a background bed fades in and out over this long, seconds
 
 
 def _settings(emotion):
@@ -144,10 +145,13 @@ def make_clips(lines, windows, system, work, pack=None, progress=None, character
     return clips
 
 
-def mix(video, clips, out):
+def mix(video, clips, out, ambience=(), game_level=1.0):
     """Game audio plus voice. The audio always runs the whole length of the video: the voice track is padded
-    to full length and the result follows the game audio, so it can never stop when the last line ends."""
-    if not clips:
+    to full length and the result follows the game audio, so it can never stop when the last line ends.
+    ambience: [(start, end, file)] quiet beds laid under the game audio, each looped and faded in and out.
+    game_level: how loud the game's own audio is (1.0 as it is, 0.0 silent)."""
+    ambience = list(ambience)
+    if not clips and not ambience and game_level == 1.0:
         subprocess.run(["ffmpeg", "-y", "-i", str(video), "-c", "copy", str(out)],
                        check=True, capture_output=True)
         return
@@ -156,13 +160,30 @@ def mix(video, clips, out):
     inputs = ["-i", str(video)]
     for _, p in clips:
         inputs += ["-i", str(p)]
-    f = [f"[{i}:a]adelay={int(s * 1000)}|{int(s * 1000)}[v{i}]" for i, (s, _) in enumerate(clips, 1)]
-    labels = "".join(f"[v{i}]" for i in range(1, len(clips) + 1))
-    f += [f"{labels}amix=inputs={len(clips)}:normalize=0[voice0]",
-          f"[voice0]apad=whole_dur={total:.3f}[voice]",
-          "[voice]asplit=2[vsc][vmix]",
-          "[0:a][vsc]sidechaincompress=threshold=0.03:ratio=8:attack=15:release=450[duck]",
-          "[duck][vmix]amix=inputs=2:normalize=0:duration=first,alimiter=limit=0.95[aout]"]
+    for _, _, p in ambience:
+        inputs += ["-stream_loop", "-1", "-i", str(p)]
+    f = [f"[0:a]volume={game_level:.3f}[game0]" if game_level != 1.0 else "[0:a]anull[game0]"]
+    f += [f"[{i}:a]adelay={int(s * 1000)}|{int(s * 1000)}[v{i}]" for i, (s, _) in enumerate(clips, 1)]
+    base = len(clips) + 1
+    for k, (a, b, _) in enumerate(ambience):
+        span = max(0.5, b - a)
+        fade = min(FADE, span / 3)
+        f.append(f"[{base + k}:a]atrim=0:{span:.3f},asetpts=PTS-STARTPTS,afade=t=in:st=0:d={fade:.2f},"
+                 f"afade=t=out:st={span - fade:.3f}:d={fade:.2f},adelay={int(a * 1000)}|{int(a * 1000)}[amb{k}]")
+    if ambience:
+        tags = "".join(f"[amb{k}]" for k in range(len(ambience)))
+        f += [f"{tags}amix=inputs={len(ambience)}:normalize=0[amb]", "[game0][amb]amix=inputs=2:normalize=0:duration=first[game]"]
+    else:
+        f.append("[game0]anull[game]")
+    if not clips:
+        f.append("[game]alimiter=limit=0.95[aout]")
+    else:
+        labels = "".join(f"[v{i}]" for i in range(1, len(clips) + 1))
+        f += [f"{labels}amix=inputs={len(clips)}:normalize=0[voice0]",
+              f"[voice0]apad=whole_dur={total:.3f}[voice]",
+              "[voice]asplit=2[vsc][vmix]",
+              "[game][vsc]sidechaincompress=threshold=0.03:ratio=8:attack=15:release=450[duck]",
+              "[duck][vmix]amix=inputs=2:normalize=0:duration=first,alimiter=limit=0.95[aout]"]
     subprocess.run(["ffmpeg", "-y", *inputs, "-filter_complex", ";".join(f),
                     "-map", "0:v", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac", str(out)],
                    check=True, capture_output=True)
