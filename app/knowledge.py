@@ -2,22 +2,33 @@
 from .config import PROMPTS
 
 PACKS = [
-    # (substrings of the game name, file, display name)
-    (("red dead",), "rdr2.md", "Red Dead Redemption 2"),
+    # the first pack whose words appear in the game name wins, so the narrower names come first
+    {"match": ("red dead",), "file": "rdr2.md", "name": "Red Dead Redemption 2", "character": "Arthur Morgan",
+     "notes": "Weary outlaw, loyal, brave, rescuing, winning"},
+    {"match": ("grand theft auto vi", "grand theft auto 6", "gta vi", "gta 6", "gta6"), "file": "gta6.md", "name": "Grand Theft Auto VI",
+     "character": "", "notes": "Sun-bleached, wry, satirical, real feeling under the jokes"},
+    {"match": ("grand theft auto", "gta"), "file": "gta5.md", "name": "Grand Theft Auto V", "character": "",
+     "notes": "Streetwise, sardonic, tired of the city, quick with a dry joke"},
 ]
+FALLBACK_CHARACTER = "the player's current character"
 
 
 def _match(game):
     g = (game or "").lower()
-    return next((p for p in PACKS if any(s in g for s in p[0])), None)
+    return next((p for p in PACKS if any(s in g for s in p["match"])), None)
 
 
 def for_game(game):
     """The knowledge text for this game, or '' for games without a pack."""
     m = _match(game)
-    return (PROMPTS / "knowledge" / m[1]).read_text() if m else ""
+    return (PROMPTS / "knowledge" / m["file"]).read_text() if m else ""
 
 
 def name_for_game(game):
     m = _match(game)
-    return m[2] if m else None
+    return m["name"] if m else None
+
+
+def defaults_for(game):
+    """The pack's own idea of who is speaking and in what voice, or None for a game without a pack."""
+    return _match(game)

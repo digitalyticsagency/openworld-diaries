@@ -47,7 +47,7 @@ def casualty_beat(c, moral_mode="both"):
     if moral_mode == "cues" and who in ("civilian", "bandit", "gang_member", "lawman") and not cue:
         who = "unknown"
     if who == "civilian":
-        return ("casualty_innocent", 9.0, f"An innocent bystander was killed ({ev}). Arthur feels remorse: quiet, heavy, "
+        return ("casualty_innocent", 9.0, f"An innocent bystander was killed ({ev}). The character feels remorse: quiet, heavy, "
                                           "no excuses, no jokes.")
     if who in ("bandit", "gang_member", "lawman"):
         return ("justice_outlaw", 6.0, f"A {who.replace('_', ' ')} who was attacking has died ({ev}). Outlaw justice: "
@@ -59,6 +59,14 @@ def casualty_beat(c, moral_mode="both"):
                                         "not cruelty; do not dramatise it.")
     return ("casualty_unclear", 5.0, f"Someone or something died ({ev}) but who it was is not clear. Stay factual; claim "
                                      "neither guilt nor justice.")
+
+
+def _wanted(n):
+    """The wanted level (stars) the scan read from the screen, 0 when none or unknown."""
+    try:
+        return max(0, min(5, int(float(n.get("wanted_level") or 0))))
+    except (TypeError, ValueError):
+        return 0
 
 
 def scene_score(n, prev=None, kw=None, moral_mode="both"):
@@ -101,6 +109,14 @@ def scene_score(n, prev=None, kw=None, moral_mode="both"):
             s += 3.5 * kw.get("big_animal", 1.0)
             kinds.append("big_animal")
             why.append(f"a large {sp} ({beh or 'in view'}): respect")
+    wl = _wanted(n)
+    if wl >= 2:
+        s += min(7.0, 2.0 + 1.2 * (wl - 1)) * kw.get("wanted", 1.0)
+        kinds.append("wanted")
+        why.append(f"wanted level {wl}: the police are after him")
+        if prev and _wanted(prev) < wl:
+            s += 1.5
+            why.append("the wanted level just rose")
     cb = casualty_beat(n.get("casualty"), moral_mode)
     if cb:
         s += cb[1] * kw.get(cb[0], 1.0)
@@ -359,7 +375,7 @@ def speech_beats(segments, tones, kw=None):
             continue
         kind = f"npc_{tone}"
         out.append({"t": seg["end"], "salience": round(min(10.0, TONE_W[tone] * kw.get(kind, 1.0)), 2), "kinds": [kind],
-                    "why": f"Someone said this to Arthur ({tone}): \"{text}\". React to how it lands, in your own words."})
+                    "why": f"Someone said this to the player's character ({tone}): \"{text}\". React to how it lands, in your own words."})
     out.sort(key=lambda b: b["t"])
     merged = []
     for b in out:   # several lines close together are one moment
@@ -372,9 +388,9 @@ def speech_beats(segments, tones, kw=None):
 
 
 def travel_quiet_fn(scenes):
-    """Returns f(t): True when Arthur is just walking or riding, with nothing and nobody to react to."""
+    """Returns f(t): True when the character is just walking, riding or driving, with nothing and nobody to react to."""
     def travelling(n):
-        calm = not (n.get("interactions") or n.get("moral_events") or n.get("animals")
+        calm = not (n.get("interactions") or n.get("moral_events") or n.get("animals") or _wanted(n) >= 1
                     or (n.get("casualty") or {}).get("who") not in (None, "", "none"))
         act = n.get("activity")
         if act:

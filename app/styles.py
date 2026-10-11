@@ -1,4 +1,4 @@
-"""The genre packs (10 general ones and 10 more for Red Dead Redemption 2) and the personality layer that sits on top of them.
+"""The genre packs (10 general ones, 10 for Red Dead Redemption 2 and 10 for Grand Theft Auto) and the personality layer that sits on top of them.
 
 A pack carries the vocabulary, what to react to, the tone, and default voices for a kind of game.
 A personality changes the attitude. Neither can override the hard guardrails.
@@ -110,9 +110,11 @@ PACKS = {
     },
 }
 
+from .gta_packs import GTA_PACKS  # noqa: E402
 from .rdr2_packs import RDR2_PACKS  # noqa: E402
 
 PACKS.update(RDR2_PACKS)
+PACKS.update(GTA_PACKS)
 
 PERSONALITIES = {
     "balanced": ("Balanced", "Follow the genre pack's own tone with no extra twist."),

@@ -119,7 +119,10 @@ def _label(n):
     if act in CHAPTER_TITLES:
         return CHAPTER_TITLES[act]
     if act in (None, "travel", "other"):
-        riding = n.get("player_state") == "riding" or "horse" in (n.get("mount_or_vehicle") or "").lower()
+        veh = (n.get("mount_or_vehicle") or "").strip().lower()
+        if n.get("player_state") == "driving" or (veh and veh not in ("none", "unknown") and "horse" not in veh):
+            return "Driving"
+        riding = n.get("player_state") == "riding" or "horse" in veh
         return "Riding" if riding else "Exploring on foot"
     return None          # menus and unknowns do not make a chapter
 

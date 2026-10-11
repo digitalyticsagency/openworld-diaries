@@ -19,8 +19,8 @@ from app.server import app  # noqa: E402
 
 
 class PackTests(unittest.TestCase):
-    def test_twenty_complete_packs(self):
-        self.assertEqual(len(styles.PACKS), 20)
+    def test_thirty_complete_packs(self):
+        self.assertEqual(len(styles.PACKS), 30)
         for k, p in styles.PACKS.items():
             for field in ("name", "games", "hints", "text", "voices"):
                 self.assertTrue(p[field], f"{k} missing {field}")
@@ -94,7 +94,7 @@ class ServerStyleTests(unittest.TestCase):
 
     def test_state_lists_catalog(self):
         s = self.c.get("/api/state").json()
-        self.assertEqual(len(s["packs"]), 20)
+        self.assertEqual(len(s["packs"]), 30)
         self.assertEqual(len(s["personalities"]), 6)
         self.assertTrue(s["ask_style"])
 

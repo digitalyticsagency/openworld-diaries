@@ -5,7 +5,7 @@ from pathlib import Path
 from .llm import claude, parse_json
 
 PROMPT = """You read lines said aloud by characters in a game video. For each numbered line decide:
-- to_player: true if it is said directly TO the player's character (Arthur: 'you', 'Mister Morgan', 'Arthur', an order, a request, a threat aimed at him), false if it is overheard, to someone else, or ambient chatter.
+- to_player: true if it is said directly TO the player's character ('you', their name or nickname, an order, a request, a threat aimed at them), false if it is overheard, to someone else, or ambient chatter.
 - tone toward him: praise, thanks, insult, threat, plea, or neutral.
 Be strict: only mark to_player true when it is clearly aimed at him. Return JSON only: [{"i": index, "to_player": true or false, "tone": "praise|thanks|insult|threat|plea|neutral"}]"""
 

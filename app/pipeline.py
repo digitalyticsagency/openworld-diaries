@@ -9,6 +9,7 @@ from . import (beats, captions, channel, cutscenes, db, detect, evolve, gaps, gu
                sources, styles, transcript, travel, voice, writer)
 from . import report as brain_report
 from . import clips as clipmod
+from . import knowledge
 from . import packaging, series, thumbnail, viral
 from .config import DATA, MIN_GAP_FLOOR, TRAVEL_GAP_DEFAULT, TRAVEL_GAP_MIN
 
@@ -25,6 +26,12 @@ def video_opts(v):
     if v.get("game"):
         o["game"] = v["game"]
     o["pack"] = styles.pack_id(v.get("pack"))
+    d, rdr = knowledge.defaults_for(o["game"]), knowledge.PACKS[0]
+    if d and d is not rdr:      # the saved character and voice notes are the Red Dead ones: they must not follow another game
+        if o["character"].strip().lower() == rdr["character"].lower():
+            o["character"] = d["character"] or knowledge.FALLBACK_CHARACTER
+        if o["voice_notes"].strip().lower() == rdr["notes"].lower():
+            o["voice_notes"] = d["notes"]
     if one_voice() and o["persona"] == "mixed":
         o["persona"] = "character"   # one steady first-person voice, not three alternating ones
     o["personality"] = styles.personality_id(v.get("personality") or db.get("personality"))

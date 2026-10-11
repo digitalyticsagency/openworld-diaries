@@ -432,12 +432,12 @@ class ContinuityTests(unittest.TestCase):
 
     def test_the_new_rules_are_in_the_prompt(self):
         system = writer.build_system("S", {"game": "g", "persona": "character", "pack": "western", "personality": "balanced"})
-        for needle in ("GROUNDING", "NO GREETINGS", "TRAVEL THOUGHTS", "CONSCIENCE", "SPEECH TO ARTHUR", "CATCHPHRASES", "continuous piece"):
+        for needle in ("GROUNDING", "NO GREETINGS", "TRAVEL THOUGHTS", "CONSCIENCE", "SPEECH TO THE CHARACTER", "CATCHPHRASES", "continuous piece"):
             self.assertIn(needle, system)
 
     def test_knowledge_lookup(self):
         self.assertEqual(knowledge.name_for_game("RED DEAD REDEMPTION 2 walkthrough"), "Red Dead Redemption 2")
-        self.assertIsNone(knowledge.name_for_game("GTA V"))
+        self.assertIsNone(knowledge.name_for_game("Forza Horizon 5"))      # a game without a pack
         self.assertEqual(knowledge.for_game(None), "")
 
 

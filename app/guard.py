@@ -79,7 +79,11 @@ def grounded(line, scenes):
 
 
 def _has_event(scene):
-    return bool(scene.get("interactions") or scene.get("moral_events"))
+    try:
+        chase = int(float(scene.get("wanted_level") or 0)) >= 2        # a police chase is a real event
+    except (TypeError, ValueError):
+        chase = False
+    return bool(scene.get("interactions") or scene.get("moral_events") or chase)
 
 
 def callback_ok(line, scenes):
@@ -94,7 +98,8 @@ def callback_ok(line, scenes):
 GREETING = re.compile(r"\b(welcome to|welcome back|hello everyone|hi everyone|hey everyone|hey guys|howdy folks|howdy everyone|"
                       r"like and subscribe|subscribe|smash that)\b", re.I)
 CANON = re.compile(r"\b(mary|eliza|isaac|dutch|hosea|john|abigail|jack|sadie|micah|javier|bill|karen|tilly|charles|molly|uncle|"
-                   r"pearson|strauss|sean|lenny|trelawny|kieran|susan|leopold|annabelle)\b", re.I)
+                   r"pearson|strauss|sean|lenny|trelawny|kieran|susan|leopold|annabelle|"
+                   r"franklin|trevor|lamar|lester|amanda|tracey|devin|simeon|lucia|jason)\b", re.I)
 
 
 CLICKBAIT = re.compile(r"(you won'?t believe|shocking|mind[- ]?blow|never seen anything like|changed everything|nobody expected|"
