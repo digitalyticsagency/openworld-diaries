@@ -77,6 +77,24 @@ def _put(path, lines):
     os.replace(tmp, path)
 
 
+def ensure_backup():
+    """Mirror the project's .env to the private copy outside the folder when that copy is missing or lacks something the .env
+    has (keys saved before the copy existed). Never removes anything from the copy. Only for the real .env."""
+    if ENV_PATH != ROOT / ".env" or not ENV_PATH.exists():
+        return False
+    have = dict(ln.split("=", 1) for ln in (KEEP_ENV.read_text().splitlines() if KEEP_ENV.exists() else []) if "=" in ln)
+    want = dict(ln.split("=", 1) for ln in ENV_PATH.read_text().splitlines() if "=" in ln and not ln.lstrip().startswith("#"))
+    missing = {k: v for k, v in want.items() if k.strip() not in {h.strip() for h in have}}
+    if not missing:
+        return False
+    merged = [f"{k}={v}" for k, v in {**have, **missing}.items()]
+    try:
+        _put(KEEP_ENV, merged)
+    except OSError:
+        return False
+    return True
+
+
 def status():
     out = []
     for name, meta in KEYS.items():

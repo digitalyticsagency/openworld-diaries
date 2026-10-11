@@ -469,6 +469,7 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     quiet_fn = beats.travel_quiet_fn(notes) if daydream_on() else (lambda t: False)
     arm, offset = evolve.choose_arm(explicit)
     eager = amt + evolve.density_bias(opts["pack"]) + offset
+    learned = round(eager - amt - offset, 1)       # what the brain learned, before the calm pace caps it
     if calm_on():
         eager = min(eager, CALM_EAGER)      # a calm free-roam video: only the strongest moments, long quiet stretches
     chosen, blocked, possible = plan_commentary(all_beats, free, cutscenes.subtract_ranges(speech, blocks), length,
@@ -487,11 +488,16 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     lines, filled = writer.fill_missed(notes, segs, windows, system, lines, chosen, profile=profile, blocks=blocks)
     lines = evolve.refine(lines, notes, windows, system, min_gap=MIN_GAP_FLOOR, blocks=blocks)
     lines = channel.fix_lines(lines, chosen, cfg)      # the welcome and the like-and-subscribe really say so, once
+    written_travel = {}
+    for l in lines:                       # the thoughts that were really written, not just planned
+        for k in (l.get("beat_kinds") or "").split(","):
+            if k.startswith("travel_") and not l.get("dropped"):
+                written_travel[k[7:]] = written_travel.get(k[7:], 0) + 1
     db.run("UPDATE videos SET stats=? WHERE id=?", (json.dumps({
         "beats": len(all_beats), "blocked_by_speech": len(blocked), "gaps": len(free),
         "micro_gaps": sum(1 for g in free if g["kind"] == "micro"), "planned": len(chosen),
         "lines": len(lines), "filled": filled, "eagerness": round(eager, 1), "arm": arm,
-        "slider": amt, "learned": round(eager - amt - offset, 1),
+        "slider": amt, "learned": learned, "calm": calm_on(),
         "silent": sum(1 for l in lines if l.get("silent")), "target_lpm": target_lpm(),
         "per_minute": round(len(lines) / (length / 60), 1), "possible_per_minute": possible,
         "cutscenes": len(cuts), "cutscene_seconds": cutscenes.total_seconds(cuts), "reactions": len(after),
@@ -499,14 +505,14 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
         "hook": any(l.get("opp_id") == "hook" for l in lines), "recap": any(l.get("opp_id") == "recap" for l in lines),
         "cliffhangers": sum(1 for l in lines if "cliffhanger" in (l.get("beat_kinds") or "")),
         "intro": any(l.get("opp_id") == "intro" for l in lines), "outro": any(l.get("opp_id") == "outro" for l in lines),
-        "travel": travel_kinds, "travel_gap": travel_gap(), "catchphrases": n_catch, "speech_reactions": sum(1 for l in lines if "npc_" in (l.get("beat_kinds") or "")),
+        "travel": written_travel, "travel_planned": travel_kinds, "travel_gap": travel_gap(), "catchphrases": n_catch, "speech_reactions": sum(1 for l in lines if "npc_" in (l.get("beat_kinds") or "")),
         "knowledge": bool(opts.get("knowledge")) and bool(__import__("app.knowledge", fromlist=["x"]).name_for_game(opts["game"]))}), vid))
     (work / "dropped.json").write_text(json.dumps(dropped, indent=2))
     chs = viral.chapters(notes, length)
     (work / "chapters.json").write_text(json.dumps({"chapters": chs, "text": viral.chapters_text(chs)}, indent=2))
     try:
         (work / "report.json").write_text(json.dumps(brain_report.build(
-            notes, lines, dropped, all_beats, blocked, length, speech, cuts, travel_kinds), indent=2))
+            notes, lines, dropped, all_beats, blocked, length, speech, cuts, written_travel), indent=2))
     except Exception:
         traceback.print_exc()   # the report is a courtesy and must never break a video
 

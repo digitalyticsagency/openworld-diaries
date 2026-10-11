@@ -263,3 +263,45 @@ class FavouriteThemesTests(unittest.TestCase):
         html = (ROOT / "app" / "static" / "index.html").read_text()
         for needle in ("My favourite thinking themes", "id=\"favthemes\"", "themes: DEFAULT_THEMES.slice()", "Save as my favourites", "data-savefav", "data-favall", "renderFavThemes"):
             self.assertIn(needle, html)
+
+
+class StatsHonestyTests(unittest.TestCase):
+    """The numbers shown under a video must say what really happened."""
+
+    def run_video(self, calm, written):
+        db.put("calm_mode", "1" if calm else "0")
+        db.put("target_lpm", "")
+        vid = db.run("INSERT INTO videos(drive_id,name,status,pack,game,created) VALUES(?,?,?,?,?,?)",
+                     (f"st{time.time_ns()}", "x.mp4", "queued", "western", "Red Dead Redemption 2", time.time())).lastrowid
+        work = pipeline.workdir(vid)
+        work.mkdir(parents=True)
+        (work / "source.mp4").write_bytes(b"x")
+        (work / "scenes.json").write_text(json.dumps([frame(t, landmark="a ridge") for t in range(0, 300, 3)]))
+        (work / "transcript.json").write_text("[]")
+        lines = [{"start": 50.0, "line": "Another ridge.", "persona": "character", "emotion": "calm", "max_duration": 4, "opp_id": "d1",
+                  "beat_kinds": "daydream,travel_notice", "salience": 4.5, "silent": False}] if written else []
+        with mock.patch("app.pipeline.scenes.video_length", return_value=300.0), \
+                mock.patch("app.pipeline.ensure_cuts", return_value=cutscenes.empty()), \
+                mock.patch("app.pipeline.sentiment.ensure", return_value=[]), \
+                mock.patch("app.pipeline.writer.write_lines", return_value=(lines, [])), \
+                mock.patch("app.pipeline.writer.fill_missed", side_effect=lambda *a, **k: (a[4], 0)), \
+                mock.patch("app.pipeline.evolve.refine", side_effect=lambda lines, *a, **k: lines), \
+                mock.patch("app.pipeline.voice.make_clips", side_effect=RuntimeError("stop here")):
+            pipeline.regenerate(vid, amt=10)
+        db.put("calm_mode", "0")
+        return json.loads(db.one("SELECT stats FROM videos WHERE id=?", (vid,))["stats"])
+
+    def test_the_calm_pace_is_not_reported_as_something_the_brain_learned(self):
+        calm = self.run_video(True, written=False)
+        normal = self.run_video(False, written=False)
+        self.assertEqual(calm["learned"], normal["learned"])
+        self.assertTrue(calm["calm"] and not normal["calm"])
+        self.assertEqual(calm["eagerness"], pipeline.CALM_EAGER)
+        self.assertGreater(normal["eagerness"], calm["eagerness"])
+
+    def test_travel_counts_are_the_thoughts_that_were_written_not_the_ones_planned(self):
+        none = self.run_video(False, written=False)
+        self.assertEqual(none["travel"], {})
+        some = self.run_video(False, written=True)
+        self.assertEqual(some["travel"], {"notice": 1})
+        self.assertIn("travel_planned", some)

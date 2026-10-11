@@ -95,6 +95,10 @@ def start_watcher():
 @asynccontextmanager
 async def lifespan(app):
     # Anything stuck mid-run when the app last stopped goes back in the queue.
+    try:
+        envfile.ensure_backup()          # keys saved before the private copy existed get copied too
+    except Exception as e:
+        print("key backup skipped:", e)
     db.run("UPDATE videos SET status='ready' WHERE status='clipping'")      # cutting clips was interrupted: the video itself is fine
     marks = ",".join("?" * len(WORKING))
     db.run(f"UPDATE videos SET status='queued', progress=? WHERE status IN ({marks})",
@@ -242,6 +246,21 @@ def index():
     return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-store"})
 
 
+def _video_view(v):
+    """One video as the page needs it: its row plus what is worked out from it (voices, character, the style hint, cutscenes)."""
+    character = pipeline.video_opts(v)["character"]          # worked out once, not four times per video every few seconds
+    cuts = cutscenes.effective(cutscenes.load(v["cutscenes"]))
+    known = styles.pack_for_game(v["game"])
+    return {**v, "has_video": pipeline.final_path(v["id"]).exists(),
+            "voices": {p: voices.resolve(v["pack"], p, character) for p in ("player", "character", "companion")},
+            "character_used": character,
+            "voice_hint": character in voices.KNOWN_CHARACTERS[1:] and not voices.chosen_voice(character),
+            "knowledge_name": knowledge.name_for_game(v["game"]),
+            "scan_has_actions": _scan_has_actions(v["id"]),
+            "known_pack": v["pack"] if styles.same_family(v["pack"], known) else known,
+            "cut_count": len(cuts), "cut_seconds": cutscenes.total_seconds(cuts)}
+
+
 @app.get("/api/state")
 def state():
     return {
@@ -277,14 +296,7 @@ def state():
         **styles.catalog(),
         "amount": pipeline.amount(),
         "learn": db.get("learn", "1") == "1",
-        "videos": [{**v, "has_video": pipeline.final_path(v["id"]).exists(),
-                    "voices": {p: voices.resolve(v["pack"], p, pipeline.video_opts(v)["character"]) for p in ("player", "character", "companion")},
-                    "character_used": pipeline.video_opts(v)["character"],
-                    "voice_hint": pipeline.video_opts(v)["character"] in voices.KNOWN_CHARACTERS[1:] and not voices.chosen_voice(pipeline.video_opts(v)["character"]),
-                    "knowledge_name": knowledge.name_for_game(v["game"]),
-                    "scan_has_actions": _scan_has_actions(v["id"]), "known_pack": (v["pack"] if styles.same_family(v["pack"], styles.pack_for_game(v["game"])) else styles.pack_for_game(v["game"])),
-                    "cut_count": len(cutscenes.effective(cutscenes.load(v["cutscenes"]))),
-                    "cut_seconds": cutscenes.total_seconds(cutscenes.effective(cutscenes.load(v["cutscenes"])))} for v in db.rows(
+        "videos": [_video_view(v) for v in db.rows(
             "SELECT id,name,status,error,self_score,combined_score,yt_video_id,pack,personality,game,suggestion,cutscenes,"
             "status_at,started_at,progress,density_rating,stats,arm,episode,character,themes,theme_note "
             "FROM videos ORDER BY id DESC LIMIT 50")],

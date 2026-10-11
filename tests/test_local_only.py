@@ -57,3 +57,63 @@ class LocalOnlyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestsNeverSeeTheRealKeysTests(unittest.TestCase):
+    """The tests point the app at a temporary folder; they must never load the owner's real API keys (a missed mock
+    would otherwise spend real credits)."""
+
+    def run_config(self, with_data):
+        import subprocess
+        home = tempfile.mkdtemp()
+        with open(os.path.join(home, ".openworld-diaries.env"), "w") as f:
+            f.write("OWD_FAKE_KEY=from-the-home-copy\n")
+        env = {**os.environ, "HOME": home}
+        env.pop("OWD_DATA", None)
+        if with_data:
+            env["OWD_DATA"] = tempfile.mkdtemp()
+        else:
+            env["OWD_DATA"] = ""
+            env.pop("OWD_DATA")
+        root = os.path.dirname(os.path.dirname(__file__))
+        out = subprocess.run([sys.executable, "-c", "import os, app.config; print(os.environ.get('OWD_FAKE_KEY'))"], cwd=root, env=env,
+                             capture_output=True, text=True)
+        return out.stdout.strip()
+
+    def test_keys_are_loaded_normally_and_skipped_under_test(self):
+        self.assertEqual(self.run_config(with_data=False), "from-the-home-copy")
+        self.assertEqual(self.run_config(with_data=True), "None")
+
+
+class KeyBackupMirrorTests(unittest.TestCase):
+    def test_keys_saved_before_the_copy_existed_are_mirrored_once_and_nothing_is_removed(self):
+        from pathlib import Path
+        from unittest import mock
+        from app import envfile
+        d = Path(tempfile.mkdtemp())
+        keep = d / "keep.env"
+        env = d / ".env"
+        env.write_text("# a comment\nGEMINI_API_KEY=g1\nANTHROPIC_API_KEY=a1\n")
+        with mock.patch.object(envfile, "ENV_PATH", envfile.ROOT / ".env"), mock.patch.object(envfile, "KEEP_ENV", keep), \
+                mock.patch("pathlib.Path.exists", autospec=True, side_effect=lambda p: True if p == envfile.ROOT / ".env" else os.path.exists(p)), \
+                mock.patch("pathlib.Path.read_text", autospec=True, side_effect=lambda p, *a, **k: env.read_text() if p == envfile.ROOT / ".env" else open(p).read()):
+            self.assertTrue(envfile.ensure_backup())
+            self.assertFalse(envfile.ensure_backup())                                    # already there: nothing to do
+            keep.write_text(keep.read_text() + "OLD_ONLY=kept\n")
+            env.write_text(env.read_text() + "ELEVENLABS_API_KEY=e1\n")
+            self.assertTrue(envfile.ensure_backup())
+        text = keep.read_text()
+        for line in ("GEMINI_API_KEY=g1", "ANTHROPIC_API_KEY=a1", "ELEVENLABS_API_KEY=e1", "OLD_ONLY=kept"):
+            self.assertIn(line, text)
+        self.assertNotIn("comment", text)
+        self.assertEqual(keep.stat().st_mode & 0o777, 0o600)
+
+    def test_a_test_file_never_mirrors(self):
+        from pathlib import Path
+        from unittest import mock
+        from app import envfile
+        d = Path(tempfile.mkdtemp())
+        (d / ".env").write_text("GEMINI_API_KEY=g1\n")
+        with mock.patch.object(envfile, "ENV_PATH", d / ".env"), mock.patch.object(envfile, "KEEP_ENV", d / "keep.env"):
+            self.assertFalse(envfile.ensure_backup())
+        self.assertFalse((d / "keep.env").exists())

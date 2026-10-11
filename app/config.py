@@ -5,8 +5,9 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 KEEP_ENV = Path.home() / ".openworld-diaries.env"   # a private copy of the keys outside the project folder
-load_dotenv(ROOT / ".env")
-load_dotenv(KEEP_ENV)    # fills in anything the project .env lacks, e.g. after the folder was cleared
+if "OWD_DATA" not in os.environ:     # the tests point the app at a temporary folder, and must never find the real keys
+    load_dotenv(ROOT / ".env")
+    load_dotenv(KEEP_ENV)    # fills in anything the project .env lacks, e.g. after the folder was cleared
 
 DATA = Path(os.environ.get("OWD_DATA", ROOT / "data"))
 DATA.mkdir(parents=True, exist_ok=True)
