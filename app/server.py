@@ -93,6 +93,7 @@ def start_watcher():
 @asynccontextmanager
 async def lifespan(app):
     # Anything stuck mid-run when the app last stopped goes back in the queue.
+    db.run("UPDATE videos SET status='ready' WHERE status='clipping'")      # cutting clips was interrupted: the video itself is fine
     marks = ",".join("?" * len(WORKING))
     db.run(f"UPDATE videos SET status='queued' WHERE status IN ({marks})", tuple(WORKING))
     if db.get("enabled") == "1":
@@ -359,6 +360,35 @@ def channel(c: Channel):
 def lines(vid: int):
     return db.rows("SELECT id,start,persona,tone,emotion,line,self_score,thumb,"
                    "COALESCE(dropped,0) dropped, COALESCE(silent,0) silent, note FROM lines WHERE video_id=? ORDER BY start", (vid,))
+
+
+@app.post("/api/videos/{vid}/clips")
+def make_clips_endpoint(vid: int):
+    v = idle_video(vid)
+    if not pipeline.final_path(vid).exists() or not (pipeline.workdir(vid) / "source.mp4").exists():
+        raise HTTPException(400, "There is no finished video to cut clips from.")
+    if v["status"] not in ("ready", "awaiting_approval", "published"):
+        raise HTTPException(400, "Wait until the video is finished.")
+    run_bg(pipeline.make_clips, vid)
+    return {"ok": True}
+
+
+@app.get("/api/videos/{vid}/clips")
+def get_clips(vid: int):
+    f = pipeline.workdir(vid) / "clips.json"
+    if not f.exists():
+        raise HTTPException(404, "No clips yet. Press Make clips.")
+    return json.loads(f.read_text())
+
+
+@app.get("/api/videos/{vid}/clips/{name}")
+def clip_file(vid: int, name: str):
+    if name != "reel" and not (name.startswith("short_") and name[6:].isdigit()):
+        raise HTTPException(404, "No such clip.")
+    path = pipeline.workdir(vid) / f"{name}.mp4"
+    if not path.exists():
+        raise HTTPException(404, "No such clip.")
+    return FileResponse(path, media_type="video/mp4", filename=f"clip_{vid}_{name}.mp4")
 
 
 @app.get("/api/videos/{vid}/packaging")

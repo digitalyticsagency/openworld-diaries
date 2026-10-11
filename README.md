@@ -67,6 +67,13 @@ Every finished video gets **Packaging** (button on the video, or Make packaging)
 
 The model sees only a fact sheet built from the scan (game, chapters, strongest moments, animals and places really seen, a few spoken lines) and everything it returns is checked in code: no clickbait wording, titles under 100 characters and not shouting, thumbnail text of one to four words, a question that really ends in a question mark, and a plain true fallback for anything that fails.
 
+## Clips: a best-moments reel and vertical Shorts
+**Clips** on a finished video (Make clips) cuts, from the finished video:
+- a **best-moments reel** of about a minute: the strongest real events, a few seconds each, in time order, with the video's own commentary and captions;
+- up to five **vertical Shorts** (9:16, under a minute each): the game picture centred over a blurred copy of itself, one moment with its lead-up and reaction, with the captions drawn again large for the vertical frame (inner voice in the upper third, game dialogue in the lower).
+
+A window never runs into a cutscene, never cuts a spoken line in half, and never overlaps another. Moments are scan events, never something someone said. While it works the video shows "Cutting the highlight clips", and it goes back to ready afterwards, even if something fails (the reason is shown).
+
 ## Caption looks
 
 Dialogue subtitles and the inner voice each have their own style and position, chosen in Voice with a live preview on a frame of your own video.

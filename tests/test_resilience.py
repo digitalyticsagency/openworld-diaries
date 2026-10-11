@@ -112,7 +112,7 @@ class RestartCleanupTests(unittest.TestCase):
         from fastapi.testclient import TestClient
         from app.server import app
         ids = {}
-        for step in sorted(pipeline.WORKING):
+        for step in sorted(pipeline.WORKING - {"clipping"}):      # clipping returns to ready, see test_clips
             ids[step] = db.run("INSERT INTO videos(drive_id,name,status,created) VALUES(?,?,?,?)",
                                (f"w{step}{time.time_ns()}", "x.mp4", step, time.time())).lastrowid
         keep = db.run("INSERT INTO videos(drive_id,name,status,created) VALUES(?,?,?,?)", (f"r{time.time_ns()}", "y.mp4", "ready", time.time())).lastrowid

@@ -8,6 +8,7 @@ from pathlib import Path
 from . import (beats, captions, channel, cutscenes, db, detect, evolve, gaps, guard, memory, publisher, scenes, sentiment,
                sources, styles, transcript, travel, voice, writer)
 from . import report as brain_report
+from . import clips as clipmod
 from . import packaging, thumbnail, viral
 from .config import DATA, MIN_GAP_FLOOR, TRAVEL_GAP_DEFAULT, TRAVEL_GAP_MIN
 
@@ -169,7 +170,7 @@ def _finish(vid, lines, clips, segs, src, blocks=None):
     voice.verify_av(final_path(vid))
 
 
-WORKING = {"downloading", "detecting", "listening", "watching", "cutscenes", "writing", "voicing", "captioning", "uploading"}
+WORKING = {"downloading", "detecting", "listening", "watching", "cutscenes", "writing", "voicing", "captioning", "uploading", "clipping"}
 
 
 def set_status(vid, status, error=None):
@@ -438,6 +439,68 @@ def package(vid):
     pkg["thumb_at"] = round(at, 1)
     (work / "packaging.json").write_text(json.dumps(pkg, indent=2))
     return pkg
+
+
+def _saved_clips(vid, rows):
+    """[(start, file, seconds)] for the voiced lines, if the saved voice files still match them, else []."""
+    voiced = [r for r in rows if not r["dropped"] and not r["silent"]]
+    files = sorted((workdir(vid) / "clips").glob("c_*.mp3"))
+    return [(r["start"], f, voice.duration(f)) for r, f in zip(voiced, files)] if len(files) == len(voiced) else []
+
+
+def make_clips(vid):
+    """The best-moments reel and vertical Shorts, from the finished video. The commentary is the one already written."""
+    prev = db.one("SELECT status FROM videos WHERE id=?", (vid,))["status"]
+
+    def run():
+        work = workdir(vid)
+        notes, segs = _load(vid)
+        length = scenes.video_length(work / "source.mp4")
+        rows = [dict(r) for r in db.rows("SELECT * FROM lines WHERE video_id=? ORDER BY start", (vid,))]
+        saved = _saved_clips(vid, rows)
+        secs = {round(s, 2): d for s, _, d in saved}
+        spans = [(r["start"], r["start"] + (secs.get(round(r["start"], 2)) or guard.read_seconds(r["line"])))
+                 for r in rows if not r["dropped"] and (r["silent"] or secs.get(round(r["start"], 2)))]
+        cuts = active_cuts(cut_state(vid))
+        blocks = cutscenes.padded(cuts) if cuts else []
+        found = [b for b in beats.find_beats(notes, evolve.kind_weights(), moral_mode()) if not cutscenes.overlaps(blocks, b["t"], b["t"] + 0.01)]
+        reel, shorts = clipmod.plan_reel(found, length, list(cuts), spans), clipmod.plan_shorts(found, length, list(cuts), spans)
+        for old in work.glob("short_*.mp4"):
+            old.unlink()
+        (work / "reel.mp4").unlink(missing_ok=True)
+        total, done = (1 if reel else 0) + len(shorts), 0
+        cb = progress_cb(vid, "Clips")
+        if reel:
+            cb(0, total)
+            clipmod.cut_reel(final_path(vid), [r["win"] for r in reel], work / "reel.mp4")
+            done += 1
+        cfg = caption_cfg()
+        cfg = captions.clean_cfg({"dialogue": {"style": cfg["dialogue"]["style"], "pos": "lower"},
+                                  "commentary": {"style": cfg["commentary"]["style"], "pos": "upper"}, "size": "medium"})
+        for i, s in enumerate(shorts, 1):
+            cb(done, total)
+            a, b = s["win"]
+            raw = work / f"short_{i}_raw.mp4"
+            clipmod.vertical(work / "source.mp4", final_path(vid), s["win"], raw)
+            shift = lambda items: [{**it, "start": it["start"] - a, "end": it["end"] - a} for it in items if it["end"] > a and it["start"] < b]
+            com = shift(captions.commentary_items(rows, secs)) if cap_commentary() else []
+            dlg = shift(captions.dialogue_items(segs, blocks)) if cap_dialogue() else []
+            captions.burn(raw, work / f"short_{i}.mp4", dlg, com, work, cfg=cfg)
+            raw.unlink(missing_ok=True)
+            done += 1
+        cb(done, total)
+        (work / "clips.json").write_text(json.dumps({
+            "reel": {"moments": [{"t": r["t"], "win": r["win"], "why": r["why"]} for r in reel],
+                     "seconds": round(sum(y - x for x, y in (r["win"] for r in reel)), 1)} if reel else None,
+            "shorts": [{"n": i, "win": s["win"], "t": s["t"], "why": s["why"], "seconds": round(s["win"][1] - s["win"][0], 1)}
+                       for i, s in enumerate(shorts, 1)]}, indent=2))
+        set_status(vid, prev)
+    set_status(vid, "clipping")
+    try:
+        run()
+    except Exception as e:
+        traceback.print_exc()
+        set_status(vid, prev, f"Clips failed: {type(e).__name__}: {e}"[:300])
 
 
 def recaption(vid):

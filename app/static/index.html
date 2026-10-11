@@ -255,14 +255,14 @@ const api = async (path, body) => {
   return j;
 };
 const say = (t, err) => { $('msg').textContent = t; $('msg').className = err ? 'err' : ''; };
-const OPEN = new Set(), ROPEN = new Set(), POPEN = new Set();
+const OPEN = new Set(), ROPEN = new Set(), POPEN = new Set(), COPEN = new Set();
 let ready = false, lastSig = '';
 const LEVEL = n => n<=4 ? 'Sparse · only the strongest moments' : n<=7 ? 'Measured · strong moments and a few quiet thoughts' : 'Balanced to chatty · most meaningful moments, plus atmosphere in long silences';
-const WORKING = ['downloading','detecting','listening','watching','cutscenes','writing','voicing','captioning','uploading'];
+const WORKING = ['downloading','detecting','listening','watching','cutscenes','writing','voicing','captioning','uploading','clipping'];
 const BUSYLIKE = [...WORKING, 'queued'];
 const REGEN = {};
 const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const STEP = { downloading: 'Copying the video', detecting: 'Detecting the game', listening: 'Transcribing the speech',
+const STEP = { clipping: 'Cutting the highlight clips', downloading: 'Copying the video', detecting: 'Detecting the game', listening: 'Transcribing the speech',
   watching: 'Scanning the video frame by frame', cutscenes: 'Finding the cutscenes', writing: 'Writing the commentary', voicing: 'Recording voices and mixing',
   captioning: 'Adding captions to the video', uploading: 'Uploading to YouTube', queued: 'Waiting in line' };
 let CLOCK = 0;
@@ -377,7 +377,7 @@ function card(v) {
       ${v.has_video && !busy ? `<a class="s" href="/api/videos/${v.id}/download" download>Download video</a>` : ''}
       <button class="s" data-lines="${v.id}">Lines</button>
       ${v.stats ? `<button class="s" data-report="${v.id}">Brain report</button>` : ''}
-      ${v.has_video && !BUSYLIKE.includes(v.status) ? `<button class="s" data-pack="${v.id}">Packaging</button>` : ''}
+      ${v.has_video && !BUSYLIKE.includes(v.status) ? `<button class="s" data-pack="${v.id}">Packaging</button><button class="s" data-clips="${v.id}">Clips</button>` : ''}
       ${v.has_video && !BUSYLIKE.includes(v.status) ? `<button class="s" data-cuts="${v.id}">Cutscenes${v.cut_count ? ' (' + v.cut_count + ')' : ''}</button>` : ''}
       ${!busy && v.has_video ? `
         <select data-regsel="${v.id}:amount" aria-label="Commentary amount"><option value="">Same eagerness</option><option value="4" ${r.amount==='4'?'selected':''}>Sparse</option><option value="8" ${r.amount==='8'?'selected':''}>Balanced</option><option value="10" ${r.amount==='10'?'selected':''}>Chatty</option></select>
@@ -393,7 +393,7 @@ function card(v) {
       ${v.status==='failed' ? `<button class="s" data-retry="${v.id}">Retry</button>` : ''}
       ${!busy ? `<button class="s danger" data-del="${v.id}">Delete</button>` : ''}
       <span class="small">${v.combined_score!=null ? 'score ' + v.combined_score.toFixed(1) : ''}</span>
-    </div>${styleHint(v)}${voicesLine(v)}${brainLine(v)}<div id="c${v.id}"></div><div id="r${v.id}"></div><div id="p${v.id}"></div><div id="l${v.id}"></div></div>`;
+    </div>${styleHint(v)}${voicesLine(v)}${brainLine(v)}<div id="c${v.id}"></div><div id="r${v.id}"></div><div id="p${v.id}"></div><div id="k${v.id}"></div><div id="l${v.id}"></div></div>`;
 }
 
 function renderVusers() {
@@ -453,6 +453,7 @@ async function load() {
   for (const id of OPEN) showLines(id);
   for (const id of ROPEN) showReport(id);
   for (const id of POPEN) showPackaging(id);
+  for (const id of COPEN) showClips(id);
   for (const id of OPENC) showCuts(id);
   $('memory').innerHTML = s.memory.length ? s.memory.map(m =>
     `<div class="mem"><span>${esc(m.text)} <span class="small">${m.kind}${m.count>1 ? ' · seen ' + m.count + 'x' : ''}</span></span><button class="s danger" data-forget="${m.id}">Forget</button></div>`).join('')
@@ -480,6 +481,20 @@ async function showCuts(id) {
     <div class="small">After changing ranges, press <strong>Rebuild video</strong> (lines inside new cutscenes are dropped) or <strong>Regenerate commentary</strong> to plan again.</div></div>`;
 }
 
+async function showClips(id) {
+  const box = $('k' + id); if (!box) return;
+  let c; try { c = await api(`videos/${id}/clips`); } catch (e) {
+    box.innerHTML = `<div class="prog">No clips yet. <button class="s primary" data-mkclips="${id}">Make clips</button><span class="small"> A best-moments reel of about a minute and vertical Shorts for TikTok and YouTube Shorts, cut from the finished video. It takes a few minutes.</span></div>`; return; }
+  const t = Date.now();
+  const clip = (name, label, why, secs) => `<div class="ln"><span class="t">${esc(label)}</span><span class="small">${esc(why)} · ${secs}s</span>
+    <a class="s" href="/api/videos/${id}/clips/${name}" download>Download</a></div>
+    <video controls preload="none" style="max-width:${name === 'reel' ? '100%' : '240px'};border-radius:8px;display:block;margin:6px 0 12px" src="/api/videos/${id}/clips/${name}?t=${t}"></video>`;
+  box.innerHTML = (c.reel ? `<div class="prog"><strong>Best-moments reel</strong> <span class="small">${c.reel.moments.length} moments</span></div>` +
+      clip('reel', 'Reel', c.reel.moments.map(m => mmss(m.t)).join(', '), c.reel.seconds) : '<div class="prog">Not enough strong moments for a reel.</div>') +
+    `<div class="prog"><strong>Vertical Shorts</strong> <span class="small">9:16, big captions</span></div>` +
+    (c.shorts.map(s => clip('short_' + s.n, 'Short ' + s.n, 'from ' + mmss(s.win[0]) + ': ' + s.why, s.seconds)).join('') || '<div class="small">No moment had room for a Short.</div>') +
+    `<div class="acts"><button class="s" data-mkclips="${id}">Make new clips</button></div>`;
+}
 const copyBtn = text => `<button class="s" data-copy="${encodeURIComponent(text)}">Copy</button>`;
 async function showPackaging(id) {
   const box = $('p' + id); if (!box) return;
@@ -580,6 +595,8 @@ document.addEventListener('click', async e => {
   try {
     if (d.preset) { setAmount(+d.preset); await api('settings', { amount: +d.preset }); say('Commentary amount saved.'); }
     if (d.copychap) { const el = $('ch' + d.copychap); try { await navigator.clipboard.writeText(el.textContent); say('Chapters copied.'); } catch (_) { say('Select the chapters and copy them by hand.', true); } }
+    if (d.clips) { const id = +d.clips; COPEN.has(id) ? COPEN.delete(id) : COPEN.add(id); if (COPEN.has(id)) showClips(id); else $('k'+id).innerHTML=''; }
+    if (d.mkclips) { try { await api(`videos/${d.mkclips}/clips`, {}); say('Cutting the clips. This takes a few minutes.'); COPEN.add(+d.mkclips); await refresh(); } catch (e) { say(e.message, true); } }
     if (d.copy) { try { await navigator.clipboard.writeText(decodeURIComponent(d.copy)); say('Copied.'); } catch (_) { say('Copy failed. Select the text and copy it by hand.', true); } }
     if (d.pack) { const id = +d.pack; POPEN.has(id) ? POPEN.delete(id) : POPEN.add(id); if (POPEN.has(id)) showPackaging(id); else $('p'+id).innerHTML=''; }
     if (d.mkpack) { say('Writing the packaging and drawing the thumbnails...'); try { await api(`videos/${d.mkpack}/packaging`, {}); say('Packaging ready.'); } catch (e) { say(e.message, true); } POPEN.add(+d.mkpack); showPackaging(+d.mkpack); }
