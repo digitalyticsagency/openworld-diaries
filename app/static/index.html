@@ -168,7 +168,9 @@
     </fieldset>
     <fieldset class="grp"><legend>Pacing and what it reacts to</legend>
       <label class="sw"><input type="checkbox" id="story_on" role="switch"><span><strong>Inner story only, by default</strong><br><span class="small">New videos get only a running train of thought while he rides, walks or runs: each line picks up from the last, a passing sight can start a thought but is never described, and fights, shops and conversations stay silent. The welcome and the outro stay. Each video can change it.</span></span></label>
-      <label for="story_lpm">Inner story: lines a minute (1.5 to 10; 6 is a line every 10 seconds)</label><input type="number" id="story_lpm" min="1.5" max="10" step="0.5" value="6" style="width:110px">
+      <label for="story_lpm">How much he talks in the inner story: <strong id="story_lpm_val">6 lines a minute</strong></label>
+      <input type="range" id="story_lpm" min="1.5" max="10" step="0.5" value="6" aria-label="How much he talks in the inner story, in lines a minute">
+      <div class="small" style="display:flex;justify-content:space-between"><span>Quiet</span><span>Chatty</span></div>
       <label class="sw"><input type="checkbox" id="calm_on" role="switch"><span><strong>Calm free-roam pace</strong><br><span class="small">For relaxed exploring videos with little happening (about 4 moments a minute or fewer; a busier video, such as a dash or a chase, keeps the normal pace): only the strongest moments get a line, thoughts on the road are at least 55 seconds apart, and the long stretches stay quiet. Pick one of the "Free roam" styles for the matching tone. If you also ask for a number of lines a minute (Manual), that explicit choice wins over this pace.</span></span></label>
       <div class="grp-sub"><strong>My favourite thinking themes</strong> <span class="small">Ticked for every new video (you can change them per video). Only the quiet thoughts on the road follow them.</span>
         <div id="favthemes" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:4px 14px;margin:6px 0"></div>
@@ -324,7 +326,7 @@ function setAmount(n) {
 let ONEVOICE = true;
 function fillChannel(s) {
   $('dayd').checked = s.daydream; $('tlpm').value = s.travel_lpm || 0; $('know').checked = s.knowledge_on; $('moral').value = s.moral_mode;
-  const c = s.channel; $('chname').value = c.channel; $('amb_on').checked = s.ambience_on; $('calm_on').checked = s.calm_mode; $('story_on').checked = s.story_mode; $('story_lpm').value = s.story_lpm; $('music_mode').value = s.music_mode; showOwnMusic(s); $('game_audio').value = s.game_audio; $('game_audio_val').textContent = s.game_audio + '%'; $('series_on').checked = s.series_on; $('series_name').value = s.series_name; $('hook_on').checked = c.hook_on; $('cliff_on').checked = c.cliff_on; $('intro_on').checked = c.intro_on; $('outro_on').checked = c.outro_on; $('catch_on').checked = c.catch_on;
+  const c = s.channel; $('chname').value = c.channel; $('amb_on').checked = s.ambience_on; $('calm_on').checked = s.calm_mode; $('story_on').checked = s.story_mode; $('story_lpm').value = s.story_lpm; $('story_lpm_val').textContent = talkLabel(s.story_lpm); $('music_mode').value = s.music_mode; showOwnMusic(s); $('game_audio').value = s.game_audio; $('game_audio_val').textContent = s.game_audio + '%'; $('series_on').checked = s.series_on; $('series_name').value = s.series_name; $('hook_on').checked = c.hook_on; $('cliff_on').checked = c.cliff_on; $('intro_on').checked = c.intro_on; $('outro_on').checked = c.outro_on; $('catch_on').checked = c.catch_on;
   $('intro_text').value = c.intro_text; $('outro_text').value = c.outro_text; $('catchphrases').value = c.catchphrases;
 }
 const saveSetting = (id, key, get) => { $(id).onchange = async () => { try { await api('settings', { [key]: get() }); say('Saved. It applies to new and regenerated videos.'); } catch (e) { say(e.message, true); } }; };
@@ -367,9 +369,11 @@ function renderFavThemes() {
   const box = $('favthemes'); if (!box) return;
   box.innerHTML = CAT.themes.map(t => `<label class="rad"><input type="checkbox" data-fav="${t.id}" ${DEFAULT_THEMES.includes(t.id) ? 'checked' : ''}> <span>${esc(t.name)}</span></label>`).join('');
 }
+const talkLabel = v => { v = +v; const sec = Math.round(60 / v); return `${v} lines a minute, about one every ${sec} seconds · ${v <= 3 ? 'quiet' : v <= 6 ? 'natural' : v <= 8 ? 'chatty' : 'very chatty'}`; };
 function storyBox(id, on, lpm, attrs) {
   return `<div class="storybox"><label class="sw"><input type="checkbox" data-${attrs[0]}="${id}" ${on ? 'checked' : ''}><span><strong>Inner story only</strong><br><span class="small">Just a running train of thought while he rides, walks or runs. Silent in fights, shops and conversations.</span></span></label>
-    <label class="small">Lines a minute <input type="number" data-${attrs[1]}="${id}" min="1.5" max="10" step="0.5" value="${lpm}" style="width:80px;display:inline-block;padding:6px 8px"></label></div>`;
+    <label class="small" for="sl_${attrs[1]}_${id}">How much he talks: <strong class="slv" id="slv_${attrs[1]}_${id}">${talkLabel(lpm)}</strong></label>
+    <input type="range" id="sl_${attrs[1]}_${id}" data-${attrs[1]}="${id}" min="1.5" max="10" step="0.5" value="${lpm}" aria-label="How much he talks, in lines a minute"><div class="small" style="display:flex;justify-content:space-between"><span>Quiet</span><span>Chatty</span></div></div>`;
 }
 function thinkingBoxInner(v) {
   let mine = DEFAULT_THEMES; if (v.themes != null) { try { mine = JSON.parse(v.themes); } catch (_) {} }
@@ -653,7 +657,7 @@ document.querySelectorAll('[data-cap]').forEach(el => el.onchange = async () => 
 $('cprevkind').onchange = refreshPreview;
 saveSetting('dayd', 'daydream', () => $('dayd').checked); saveSetting('tlpm', 'travel_lpm', () => +$('tlpm').value || 0); saveSetting('know', 'knowledge_on', () => $('know').checked);
 saveSetting('moral', 'moral_mode', () => $('moral').value); saveSetting('chname', 'channel_name', () => $('chname').value);
-saveSetting('amb_on', 'ambience_on', () => $('amb_on').checked); saveSetting('calm_on', 'calm_mode', () => $('calm_on').checked); saveSetting('story_on', 'story_mode', () => $('story_on').checked); saveSetting('story_lpm', 'story_lpm', () => +$('story_lpm').value || 6);
+saveSetting('amb_on', 'ambience_on', () => $('amb_on').checked); saveSetting('calm_on', 'calm_mode', () => $('calm_on').checked); saveSetting('story_on', 'story_mode', () => $('story_on').checked); saveSetting('story_lpm', 'story_lpm', () => +$('story_lpm').value || 6); $('story_lpm').oninput = () => { $('story_lpm_val').textContent = talkLabel($('story_lpm').value); };
 function showOwnMusic(s) { $('ownmusic').hidden = $('music_mode').value !== 'own'; $('ownmusic_name').textContent = s && s.own_music ? 'Current track: ' + s.own_music : 'No track yet.'; $('ownmusic_remove').hidden = !(s && s.own_music); }
 $('music_mode').onchange = async () => { try { await api('settings', { music_mode: $('music_mode').value }); say('Saved. It applies to new videos and to Rebuild video.'); const s = await api('state'); showOwnMusic(s); } catch (e) { say(e.message, true); } };
 $('ownmusic_file').onchange = e => { const f = e.target.files[0]; if (!f) return; const x = new XMLHttpRequest(); x.open('POST', '/api/music?name=' + encodeURIComponent(f.name));
@@ -682,6 +686,7 @@ $('trendgo').onclick = async () => { say('Thinking about what to make next...');
 $('evolve').onclick = async () => { say('Running...'); try { const r = await api('evolve/run', {}); say(`Done: ${JSON.stringify(r)}`); } catch (e) { say(e.message, true); } lastSig=''; load(); };
 const del = async path => { const r = await fetch('/api/' + path, { method: 'DELETE' }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'failed'); };
 const refresh = () => { lastSig = ''; return load(); };
+document.addEventListener('input', e => { const d = e.target.dataset; const k = d.chlpm ? 'chlpm' : d.reglpm ? 'reglpm' : null; if (!k) return; const id = d[k], el = document.getElementById(`slv_${k}_${id}`); if (el) el.textContent = talkLabel(e.target.value); });
 document.addEventListener('change', async e => {
   const d = e.target.dataset;
   try {

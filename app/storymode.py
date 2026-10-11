@@ -10,7 +10,7 @@ from .config import LEAD, MIN_GAP_FLOOR, MIN_USABLE_GAP, TAIL
 THREAD_LINES = 4              # lines in one thread of thought before a new one begins
 TRIGGER_EVERY = 3             # a passing sight is offered on every third thought, when the scan shows one
 MIN_LPM, MAX_LPM, DEFAULT_LPM = 1.5, 10.0, 6.0
-MIN_WORDS = 5
+MIN_WORDS = 2
 SETTLE = 2.5               # after a fight, a shop or a conversation the story waits this long before it speaks again
 LEAVE = 1.0                # and it stops this long before the next one starts
 MAX_SECONDS = 11.0
@@ -69,10 +69,22 @@ def stretches(notes, length):
     return [(a, min(b, length)) for a, b in out if min(b, length) > a]
 
 
+FORMS = ["a question he asks himself", "a plain honest statement", "a half-finished thought that trails off",
+         "a small dry joke at his own expense", "a scrap of memory", "a quiet answer to the line before"]
+LENGTHS = [("medium", 14), ("short", 8), ("medium", 14), ("a word or two", 4), ("longer", 22)]
+
+
+def _wobble(n):
+    """A fixed, repeatable 0..1 for line n, so the gaps are not a metronome but the same video always plans the same."""
+    return ((n * 37 + 11) % 100) / 100.0
+
+
 def spots(notes, free, length, lpm):
-    """[(t, max_seconds)] where a line of the story can go: inside a free gap and a travel stretch, a steady pace apart."""
-    step = max(6.0, min(40.0, 60.0 / clamp_lpm(lpm)))
-    out = []
+    """[(t, max_seconds)] where a line of the story can go: inside a free gap and a travel stretch, about the pace asked for apart
+    (each gap a little shorter or longer than the next, so it does not tick like a clock)."""
+    base = max(6.0, min(40.0, 60.0 / clamp_lpm(lpm)))
+    out, n = [], 0
+    step = base
     for a, b in stretches(notes, length):
         for g in free:
             lo, hi = max(a, g["start"]), min(b, g["end"])
@@ -80,7 +92,9 @@ def spots(notes, free, length, lpm):
                 continue
             t = lo + LEAD
             while t + MIN_USABLE_GAP <= hi - TAIL:
+                step = max(MIN_GAP_FLOOR + MIN_USABLE_GAP, base * (0.75 + 0.5 * _wobble(n)))
                 nxt = t + step
+                n += 1
                 cap = min(hi - t - TAIL, (nxt - t - MIN_GAP_FLOOR) if nxt + MIN_USABLE_GAP <= hi - TAIL else 1e9, MAX_SECONDS)
                 if gapmod.words_for(cap) >= MIN_WORDS:
                     out.append((round(t, 2), round(cap, 2)))
@@ -109,7 +123,10 @@ def plan(notes, free, length, lpm, theme_ids=None, note=""):
                + (f"A passing sight may start the thought, but do not describe it, only what it stirs: {'; '.join(facts)}. " if facts else "")
                + (f'The owner also asked for these thoughts to touch on: "{note}". Treat that as a feeling, never as a fact, and never name anyone. ' if note and k == 0 else "")
                + "One or two short first-person sentences. Never name a real character and never state a story fact. Use emotion calm, awe, longing, amusement or none.")
-        mw = min(gapmod.words_for(cap), 22)
+        form = FORMS[(i + i // 3) % len(FORMS)]
+        size, limit = LENGTHS[i % len(LENGTHS)]
+        mw = min(gapmod.words_for(cap), limit)
+        why += f" Shape: {form}. Length: {size}, at most {mw} words."
         out.append({"id": f"s{i}", "t": t, "beat_t": None, "salience": 4.6, "kinds": ["daydream", "travel_story"], "kind": "daydream",
                     "why": why, "max_words": mw, "max_duration": cap, "travel": "story", "thread": label})
     return out

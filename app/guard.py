@@ -108,6 +108,9 @@ CLICKBAIT = re.compile(r"(you won'?t believe|shocking|mind[- ]?blow|never seen a
 
 TIME_SPAN = re.compile(r"\b(an hour ago|hours ago|hours (?:now|in|into)|been riding for|been driving for|been walking for|"
                        r"since this morning|since dawn)\b", re.I)      # claims about THIS ride; idioms and memories ("for years") are left alone
+NARRATOR = re.compile(r"^\W*(we can see|you can see|as you can see|as we (?:ride|go|move|travel|walk|head)|here we (?:are|see)|and here|behold|"
+                      r"now we|let's take a look|ladies and gentlemen)\b", re.I)          # talking to a viewer: nobody is listening to a mind
+STORY_NARRATOR = re.compile(r"^\W*(look at (?:that|this|those|these|the)\b|check out\b|there goes\b|what a (?:beautiful|lovely|great|nice|fine)\b)", re.I)
 LONGEST_PLAUSIBLE = 3600.0      # a video this short cannot show hours or days passing
 
 
@@ -118,6 +121,8 @@ def content_reason(ln, text, length=None):
     if length and length < LONGEST_PLAUSIBLE and TIME_SPAN.search(text) and ln.get("opp_id") not in ("intro", "outro"):
         return "claims a time span the video does not show"
     kinds0 = set((ln.get("beat_kinds") or "").split(","))
+    if ln.get("opp_id") not in ("intro", "outro") and (NARRATOR.search(text) or ("travel_story" in kinds0 and STORY_NARRATOR.search(text))):
+        return "narrates the scene instead of thinking"
     if kinds0 & {"hook", "cliffhanger"} and CLICKBAIT.search(text):
         return "clickbait wording in a teaser"
     if ln.get("daydream") and CANON.search(text):

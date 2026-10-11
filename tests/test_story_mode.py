@@ -51,7 +51,10 @@ class SpotTests(unittest.TestCase):
         fast = storymode.spots(ride(180), free, 180, 8)
         self.assertGreater(len(fast), len(slow) * 2)
         ts = [t for t, _ in storymode.spots(ride(180), free, 180, 6)]
-        self.assertTrue(all(9.5 <= b - a <= 10.5 for a, b in zip(ts, ts[1:])), ts[:6])           # 6 a minute is a line every 10 seconds
+        gaps_ = [b - a for a, b in zip(ts, ts[1:])]
+        self.assertTrue(all(7.4 <= g <= 12.6 for g in gaps_), gaps_[:8])                         # 6 a minute is about a line every 10 seconds
+        self.assertAlmostEqual(sum(gaps_) / len(gaps_), 10.0, delta=1.2)
+        self.assertGreater(len({round(g, 1) for g in gaps_}), 4)                                 # but not a metronome
 
     def test_the_pace_is_clamped_and_junk_falls_back(self):
         self.assertEqual(storymode.clamp_lpm(100), storymode.MAX_LPM)
@@ -264,3 +267,96 @@ class PipelineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NaturalInnerVoiceTests(unittest.TestCase):
+    def test_the_writer_is_taught_how_a_mind_really_sounds_in_every_mode(self):
+        opts = {"game": "Red Dead Redemption 2", "persona": "character", "pack": "free_wanderer", "personality": "balanced"}
+        for story in (False, True):
+            system = writer.build_system("S", {**opts, "story_mode": story})
+            self.assertIn("HOW A MIND REALLY SOUNDS", system)
+            self.assertIn("Think, do not report", system)
+            self.assertIn("Be fragmentary", system)
+            self.assertIn("Talk to yourself", system)
+            self.assertIn("never say \"we can see\"", system)
+            self.assertLess(system.index("HOW A MIND REALLY SOUNDS"), system.index("HARD RULES"))     # taught first, bound by the locked rules after
+
+    def test_story_mode_adds_shapes_and_lengths(self):
+        system = writer.build_system("S", {"game": "G", "persona": "character", "pack": "western", "personality": "balanced", "story_mode": True})
+        self.assertIn("Sound like a mind, not a narrator", system)
+        self.assertIn("Never put three lines of the same length or the same shape in a row", system)
+
+    def test_each_thought_has_its_own_shape_and_length_and_they_vary(self):
+        p = storymode.plan(ride(400), gaps.free_gaps([], 400), 400, 6)
+        shapes = [o["why"].split("Shape: ")[1].split(".")[0] for o in p]
+        lengths = [o["why"].split("Length: ")[1].split(",")[0] for o in p]
+        self.assertGreaterEqual(len(set(shapes)), 5)
+        self.assertEqual(set(lengths), {"medium", "short", "a word or two", "longer"})
+        for a, b in zip(shapes, shapes[1:]):
+            self.assertNotEqual(a, b)                                                           # never the same shape twice in a row
+        for a, b in zip(lengths, lengths[1:]):
+            self.assertNotEqual(a, b)
+        for o in p:
+            self.assertLessEqual(o["max_words"], 22)
+            if "a word or two" in o["why"]:
+                self.assertLessEqual(o["max_words"], 4)
+
+    def test_the_plan_is_the_same_every_time_for_the_same_video(self):
+        a = storymode.plan(ride(180), gaps.free_gaps([], 180), 180, 6)
+        b = storymode.plan(ride(180), gaps.free_gaps([], 180), 180, 6)
+        self.assertEqual([(o["t"], o["why"]) for o in a], [(o["t"], o["why"]) for o in b])
+
+    def test_a_chattier_slider_means_more_thoughts_and_a_quieter_one_fewer(self):
+        counts = [len(storymode.plan(ride(300), gaps.free_gaps([], 300), 300, lpm)) for lpm in (2, 4, 6, 8, 10)]
+        self.assertEqual(counts, sorted(counts))
+        self.assertGreater(counts[-1], counts[0] * 3)
+
+    def test_a_viewer_directed_line_is_dropped_because_nobody_is_listening(self):
+        scenes = ride(120)
+
+        def reason(text, opp="b1", kinds="new_place"):
+            ln = {"start": 20.0, "line": text, "persona": "character", "emotion": "calm", "max_words": 20, "max_duration": 6.0,
+                  "opp_id": opp, "beat_kinds": kinds, "silent": False}
+            keep, drop = guard.enforce([ln], [], scenes, min_gap=2.5)
+            return None if keep else drop[0]["reason"]
+        for bad in ("We can see the river from here.", "As we ride along, the hills open up.", "Here we are at the crossing.",
+                    "And here comes the wagon.", "Behold, a bridge.", "You can see why he stayed."):
+            self.assertEqual(reason(bad), "narrates the scene instead of thinking", bad)
+        for ok in ("Here we go.", "Wonder if the river's cold.", "Bridges. Always feels like a choice.", "Hm. Not today."):
+            self.assertIsNone(reason(ok), ok)
+        self.assertIsNone(reason("Welcome to the channel, as we ride out.", opp="intro"))
+
+    def test_look_at_that_is_dropped_in_the_inner_story_only(self):
+        scenes = ride(120)
+
+        def reason(text, kinds):
+            ln = {"start": 20.0, "line": text, "persona": "character", "emotion": "calm", "max_words": 20, "max_duration": 6.0,
+                  "opp_id": "s1", "beat_kinds": kinds, "silent": False}
+            keep, drop = guard.enforce([ln], [], scenes, min_gap=2.5)
+            return None if keep else drop[0]["reason"]
+        self.assertEqual(reason("Look at that draft horse, leaning into the harness.", "daydream,travel_story"), "narrates the scene instead of thinking")
+        self.assertEqual(reason("What a beautiful valley.", "daydream,travel_story"), "narrates the scene instead of thinking")
+        self.assertIsNone(reason("Look at that draft horse, leaning into the harness.", "big_animal"))       # a normal reaction may point
+        self.assertIsNone(reason("Wonder what it carries. Hm.", "daydream,travel_story"))
+
+
+class SliderTests(unittest.TestCase):
+    def test_the_page_has_a_slider_for_how_much_he_talks_everywhere_the_story_is_set(self):
+        from app.config import ROOT
+        html = (ROOT / "app" / "static" / "index.html").read_text()
+        self.assertIn('<input type="range" id="story_lpm"', html)
+        self.assertIn("How much he talks in the inner story", html)
+        self.assertIn('type="range" id="sl_${attrs[1]}_${id}"', html)                            # the per-video sliders
+        self.assertIn("const talkLabel", html)
+        self.assertIn("about one every", html)
+        self.assertNotIn('<input type="number" id="story_lpm"', html)
+        self.assertNotIn('type="number" data-${attrs[1]}', html)
+
+    def test_the_labels_make_sense(self):
+        import subprocess
+        js = ("const talkLabel = v => { v = +v; const sec = Math.round(60 / v); return `${v} lines a minute, about one every ${sec} seconds · ${v <= 3 ? 'quiet' : v <= 6 ? 'natural' : v <= 8 ? 'chatty' : 'very chatty'}`; };"
+              "console.log([1.5, 3, 6, 8, 10].map(talkLabel).join('|'))")
+        out = subprocess.run(["node", "-e", js], capture_output=True, text=True).stdout.strip().split("|")
+        self.assertEqual(out[0], "1.5 lines a minute, about one every 40 seconds · quiet")
+        self.assertEqual(out[2], "6 lines a minute, about one every 10 seconds · natural")
+        self.assertEqual(out[4], "10 lines a minute, about one every 6 seconds · very chatty")

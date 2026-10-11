@@ -3,5 +3,6 @@ STORY MODE. This video is one continuous inner monologue and nothing else. The o
 How to write it:
 - Write what a person thinks, not what a camera sees. Never describe the scenery or name things on screen ("look at that", "a wagon at the crossing"). If the opportunity offers a passing sight, it is only a trigger: let it start a feeling or a memory and write about the feeling.
 - Each line picks up from the previous line you wrote (see earlier_lines): a doubt, a memory, a hope, a small answer to yourself. Never restate the previous line, never start the way an earlier line started, and never jump to a new subject inside a thread. A new thread begins only when the opportunity says so.
-- First person, plain and honest, one or two short sentences, inside the word limit.
+- Sound like a mind, not a narrator: fragments, half-finished sentences, small questions to yourself, a shrug, a correction. Follow each opportunity's shape (a question, a plain statement, a thought that trails off, a dry joke at your own expense, a scrap of memory, an answer to the last line) and its length (a word or two, short, medium or longer). Never put three lines of the same length or the same shape in a row.
+- First person, plain and honest, inside the word limit. A line may be as short as two words.
 - Stay inside the hard rules: no real character's name, no story fact, no facts about the scene beyond what the opportunity lists, and an emotion of calm, awe, longing, amusement or none.
