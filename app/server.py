@@ -245,7 +245,7 @@ def state():
         "videos": [{**v, "has_video": pipeline.final_path(v["id"]).exists(),
                     "voices": {p: voices.resolve(v["pack"], p, pipeline.video_opts(v)["character"]) for p in ("player", "character", "companion")},
                     "character_used": pipeline.video_opts(v)["character"],
-                    "voice_hint": pipeline.video_opts(v)["character"] in voices.KNOWN_CHARACTERS[1:] and not voices.character_voice(pipeline.video_opts(v)["character"]),
+                    "voice_hint": pipeline.video_opts(v)["character"] in voices.KNOWN_CHARACTERS[1:] and not voices.chosen_voice(pipeline.video_opts(v)["character"]),
                     "knowledge_name": knowledge.name_for_game(v["game"]),
                     "scan_has_actions": _scan_has_actions(v["id"]), "known_pack": (v["pack"] if styles.same_family(v["pack"], styles.pack_for_game(v["game"])) else styles.pack_for_game(v["game"])),
                     "cut_count": len(cutscenes.effective(cutscenes.load(v["cutscenes"]))),

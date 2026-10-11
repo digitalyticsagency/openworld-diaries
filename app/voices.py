@@ -21,9 +21,18 @@ def _ckey(name):
     return " ".join((name or "").lower().split())
 
 
-def character_voice(name):
-    """The voice chosen for one named character (for example John Marston), or None."""
+# A man's voice for John Marston when none has been chosen, so a style's own voice (a cozy style's is a woman's) never speaks as him.
+DEFAULT_CHARACTER_VOICES = {"john marston": "ruirxsoakN0GWmGNIo04"}      # "John Morgan - Old West Southern Cowboy"
+
+
+def chosen_voice(name):
+    """The voice the owner picked for this character, or None."""
     return db.get(f"voice:char:{_ckey(name)}") or None
+
+
+def character_voice(name):
+    """The voice for one named character (for example John Marston): the one chosen, else his default, else None."""
+    return chosen_voice(name) or DEFAULT_CHARACTER_VOICES.get(_ckey(name))
 
 
 def assign_character(name, voice_id):
@@ -37,7 +46,8 @@ def assign_character(name, voice_id):
 
 def characters():
     """The named characters that can have a voice of their own, with what each is set to."""
-    return [{"name": n, "voice": character_voice(n)} for n in KNOWN_CHARACTERS]
+    return [{"name": n, "voice": chosen_voice(n) or DEFAULT_CHARACTER_VOICES.get(_ckey(n)), "default": not chosen_voice(n) and _ckey(n) in DEFAULT_CHARACTER_VOICES}
+            for n in KNOWN_CHARACTERS]
 
 
 def resolve(pack, persona, character=None):

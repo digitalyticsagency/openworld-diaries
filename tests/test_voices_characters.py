@@ -21,8 +21,8 @@ class CharacterVoiceTests(unittest.TestCase):
         self.c = TestClient(app)
 
     def test_a_character_with_his_own_voice_speaks_in_it_and_others_keep_the_styles(self):
-        base = voices.resolve("western", "character", "John Marston")
-        self.assertEqual(base, voices.resolve("western", "character", "Arthur Morgan"))      # nothing chosen: the style's voice
+        base = voices.resolve("western", "character", "Arthur Morgan")                          # nothing chosen: the style's voice
+        self.assertEqual(base, voices.configured("western", "character"))
         voices.assign_character("John Marston", "JOHNVOICE")
         self.assertEqual(voices.resolve("western", "character", "John Marston"), "JOHNVOICE")
         self.assertEqual(voices.resolve("western", "character", "  john   MARSTON "), "JOHNVOICE")
@@ -37,10 +37,13 @@ class CharacterVoiceTests(unittest.TestCase):
         db.put("one_voice", "1")
         self.assertEqual(voices.resolve("western", "companion", "John Marston"), "JOHNVOICE")      # one voice: every line is the character's
 
-    def test_clearing_goes_back_to_the_styles_voice(self):
+    def test_clearing_goes_back_to_his_default_never_to_a_womans_style_voice(self):
         voices.assign_character("John Marston", "JOHNVOICE")
         voices.assign_character("John Marston", "")
-        self.assertIsNone(voices.character_voice("John Marston"))
+        self.assertEqual(voices.character_voice("John Marston"), voices.DEFAULT_CHARACTER_VOICES["john marston"])
+        self.assertIsNone(voices.chosen_voice("John Marston"))
+        voices.assign_character("Arthur Morgan", "")
+        self.assertIsNone(voices.character_voice("Arthur Morgan"))
         with self.assertRaises(ValueError):
             voices.assign_character("  ", "x")
 
@@ -48,6 +51,10 @@ class CharacterVoiceTests(unittest.TestCase):
         self.assertEqual([c["name"] for c in self.c.get("/api/voices/characters").json()], ["Arthur Morgan", "John Marston"])
         self.assertEqual(self.c.post("/api/voices/character", json={"name": "John Marston", "voice_id": "V1"}).status_code, 200)
         self.assertEqual(next(c for c in self.c.get("/api/voices/characters").json() if c["name"] == "John Marston")["voice"], "V1")
+        listing = {c["name"]: c for c in (voices.characters())}
+        self.assertFalse(listing["John Marston"]["default"])
+        voices.assign_character("John Marston", "")
+        self.assertTrue(next(c for c in self.c.get("/api/voices/characters").json() if c["name"] == "John Marston")["default"])
         self.assertEqual(self.c.post("/api/voices/character", json={"name": "Someone Else", "voice_id": "V1"}).status_code, 400)
 
     def test_a_video_as_john_shows_a_hint_until_he_has_a_voice(self):
@@ -55,6 +62,7 @@ class CharacterVoiceTests(unittest.TestCase):
                      (f"cv{time.time_ns()}", "x.mp4", "ready", 1.0, "western", "Red Dead Redemption", "John Marston")).lastrowid
         row = lambda: next(v for v in self.c.get("/api/state").json()["videos"] if v["id"] == vid)
         self.assertTrue(row()["voice_hint"])
+        self.assertEqual(row()["voices"]["character"], voices.DEFAULT_CHARACTER_VOICES["john marston"])
         self.assertEqual(row()["character_used"], "John Marston")
         voices.assign_character("John Marston", "V1")
         self.assertFalse(row()["voice_hint"])
@@ -87,6 +95,24 @@ class CharacterDaydreamTests(unittest.TestCase):
             travel.ORDER = saved
         self.assertTrue(all(any(t in o["why"] for t in john) for o in spots))
         self.assertFalse(any(any(t in o["why"] for t in channel.themes_for("Arthur Morgan")) for o in spots))
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class JohnIsNeverAWomanTests(unittest.TestCase):
+    """A cozy style's own character voice is a woman's. John Marston must never be spoken in it."""
+
+    def test_in_every_style_john_speaks_in_his_own_man_voice(self):
+        from app import styles
+        voices.assign_character("John Marston", "")
+        for pack in styles.PACKS:
+            self.assertEqual(voices.resolve(pack, "character", "John Marston"),
+                             voices.chosen_voice("John Marston") or voices.DEFAULT_CHARACTER_VOICES["john marston"], pack)
+        db.put("one_voice", "1")
+        self.assertEqual(voices.resolve("cozy", "character", "John Marston"), voices.DEFAULT_CHARACTER_VOICES["john marston"])
+        self.assertNotEqual(voices.resolve("cozy", "character", "John Marston"), styles.PACKS["cozy"]["voices"]["character"])
 
 
 if __name__ == "__main__":
