@@ -165,3 +165,29 @@ class PolishNeverCostsALineTests(unittest.TestCase):
             out = evolve.refine(self.lines(), [], [], "sys")
         self.assertEqual(len(out), 6)
         self.assertEqual(out[1]["line"], "Short thought number 1.")
+
+
+class NoCallWaitsForeverTests(unittest.TestCase):
+    """Video 8's third regenerate sat in 'writing' for 26 minutes: one hung call to the model, with the client's ten-minute default."""
+
+    def test_the_claude_client_has_a_short_timeout_and_a_retry_cap(self):
+        import anthropic
+        from app import llm
+        os.environ["ANTHROPIC_API_KEY"] = "test-key"
+        with mock.patch("anthropic.Anthropic") as client:
+            client.return_value.messages.create.return_value = mock.Mock(content=[mock.Mock(type="text", text="[]")])
+            self.assertEqual(llm.claude("sys", "user"), "[]")
+        kw = client.call_args.kwargs
+        self.assertEqual(kw["max_retries"], 2)
+        self.assertEqual(kw["timeout"].read, 180.0)
+        self.assertEqual(kw["timeout"].connect, 20.0)
+        self.assertIsInstance(kw["timeout"], anthropic.Timeout)
+        self.assertLessEqual(llm.CLAUDE_TIMEOUT[0] * (llm.CLAUDE_RETRIES + 1), 600)             # a hung call can never cost more than ten minutes
+
+    def test_the_gemini_client_has_a_timeout_too(self):
+        from app import llm
+        os.environ["GEMINI_API_KEY"] = "test-key"
+        with mock.patch("google.genai.Client") as client:
+            client.return_value.models.generate_content.return_value = mock.Mock(text="[]")
+            llm.gemini_json(["hi"])
+        self.assertEqual(client.call_args.kwargs["http_options"].timeout, llm.GEMINI_TIMEOUT_MS)

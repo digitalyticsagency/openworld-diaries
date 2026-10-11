@@ -37,9 +37,16 @@ def parse_json(text):
     return json.loads(fixed, strict=False)       # still unreadable: raise the real error
 
 
+CLAUDE_TIMEOUT = (180.0, 20.0)     # read, connect: a call that has not answered in three minutes is tried again, never waited on for half an hour
+CLAUDE_RETRIES = 2
+GEMINI_TIMEOUT_MS = 300_000
+
+
 def claude(system, user, max_tokens=8000):
     import anthropic
-    r = anthropic.Anthropic(api_key=key("ANTHROPIC_API_KEY")).messages.create(
+    client = anthropic.Anthropic(api_key=key("ANTHROPIC_API_KEY"), max_retries=CLAUDE_RETRIES,
+                                 timeout=anthropic.Timeout(CLAUDE_TIMEOUT[0], connect=CLAUDE_TIMEOUT[1]))
+    r = client.messages.create(
         model=os.environ.get("CLAUDE_MODEL", "claude-opus-5-5"), max_tokens=max_tokens, system=system,
         messages=[{"role": "user", "content": user}])
     return "".join(b.text for b in r.content if getattr(b, "type", "") == "text")
@@ -49,7 +56,7 @@ def gemini_json(parts):
     """parts: list of str or (bytes, mime_type). Returns parsed JSON."""
     from google import genai
     from google.genai import types
-    client = genai.Client(api_key=key("GEMINI_API_KEY"))
+    client = genai.Client(api_key=key("GEMINI_API_KEY"), http_options=types.HttpOptions(timeout=GEMINI_TIMEOUT_MS))
     contents = [types.Part.from_bytes(data=p[0], mime_type=p[1]) if isinstance(p, tuple) else p
                 for p in parts]
     last = None
