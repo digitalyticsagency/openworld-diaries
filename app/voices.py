@@ -6,6 +6,7 @@ import requests
 
 from . import db, llm, styles
 
+KNOWN_CHARACTERS = ["Arthur Morgan", "John Marston"]
 _cache = {"at": 0, "voices": []}
 
 
@@ -16,10 +17,38 @@ def configured(pack, persona):
             or os.environ.get(f"ELEVEN_VOICE_{persona.upper()}"))
 
 
-def resolve(pack, persona):
-    """The voice that actually speaks. With one consistent voice on, every line uses the Character voice."""
+def _ckey(name):
+    return " ".join((name or "").lower().split())
+
+
+def character_voice(name):
+    """The voice chosen for one named character (for example John Marston), or None."""
+    return db.get(f"voice:char:{_ckey(name)}") or None
+
+
+def assign_character(name, voice_id):
+    if not _ckey(name):
+        raise ValueError("A character needs a name.")
+    if voice_id:
+        db.put(f"voice:char:{_ckey(name)}", voice_id)
+    else:
+        db.run("DELETE FROM settings WHERE key=?", (f"voice:char:{_ckey(name)}",))
+
+
+def characters():
+    """The named characters that can have a voice of their own, with what each is set to."""
+    return [{"name": n, "voice": character_voice(n)} for n in KNOWN_CHARACTERS]
+
+
+def resolve(pack, persona, character=None):
+    """The voice that actually speaks. With one consistent voice on, every line uses the Character voice, and a character
+    with a voice of his own (John Marston, say) speaks in that voice instead of the style's."""
     if db.get("one_voice", "1") == "1":
         persona = "character"
+    if persona == "character" and character:
+        own = character_voice(character)
+        if own:
+            return own
     return configured(pack, persona)
 
 

@@ -228,6 +228,9 @@
     <p class="small" id="onevnote">With one consistent voice on, only the Character voice is used; Player and Companion are greyed out.</p>
     <p class="small">Changes save instantly. They apply to videos made with this style from now on, and to existing ones when you press Rebuild video. Preview plays a short sample and uses a few ElevenLabs credits.</p>
     <div id="vusers" class="small"></div>
+    <h3 style="margin-top:18px">A voice for each character</h3>
+    <p class="small">When a video's character is one of these, every line is spoken in the voice chosen here instead of the style's voice, so John Marston can sound different from Arthur Morgan. Leave it on "The style's voice" to use the style's own.</p>
+    <div id="cvoices"></div>
   </section>
 
   <section>
@@ -352,7 +355,7 @@ function voicesLine(v) {
   if (!v.has_video || !v.voices) return '';
   const p = v.voices, pk = v.pack || 'western';
   return `<div class="prog">Voices (${esc(packName(pk))} style): Player <strong>${esc(vname(p.player))}</strong> · Character <strong>${esc(vname(p.character))}</strong> · Companion <strong>${esc(vname(p.companion))}</strong>
-    <button class="s" data-changevoices="${pk}">Change voices</button></div>`;
+    <button class="s" data-changevoices="${pk}">Change voices</button>${v.voice_hint ? `<div class="warn">${esc(v.character_used || 'This character')} has no voice of his own yet, so the style's voice speaks. Choose one under Voices, A voice for each character, then press Rebuild video.</div>` : ''}</div>`;
 }
 
 function styleHint(v) {
@@ -415,6 +418,13 @@ function renderVusers() {
     : 'No finished video uses this style yet. Pick the style in a video\'s Regenerate menu to try it.';
 }
 
+async function loadCharVoices() {
+  let cs; try { cs = await api('voices/characters'); } catch (_) { return; }
+  $('cvoices').innerHTML = cs.map(c => {
+    const list = c.voice && !VOICES.some(v => v.id === c.voice) ? [{ id: c.voice, name: 'Current voice' }, ...VOICES] : VOICES;
+    return `<div class="vrow"><span>${esc(c.name)}</span><select data-cv="${esc(c.name)}" aria-label="Voice for ${esc(c.name)}"><option value="">The style's voice</option>${opt(list, c.voice)}</select><button class="s" data-cvprev="${esc(c.name)}">Preview</button></div>`;
+  }).join('');
+}
 async function loadVoices() {
   if (!VOICES.length) { try { VOICES = await api('voices'); } catch (e) { say(e.message, true); return; } }
   const a = await api('voices/assigned?pack=' + $('vpack').value);
@@ -424,6 +434,7 @@ async function loadVoices() {
   }
   markOneVoice();
   renderVusers();
+  loadCharVoices();
   lastSig = ''; load();
 }
 
@@ -615,6 +626,7 @@ document.addEventListener('change', async e => {
   try {
     if (d.regsel) { const [id, f] = d.regsel.split(':'); (REGEN[id] ||= {})[f] = e.target.value; }
     if (d.ch) { const [id, f] = d.ch.split(':'); (CHOOSE[id] ||= {})[f] = e.target.value; }
+    if (d.cv) { try { await api('voices/character', { name: d.cv, voice_id: e.target.value }); say('Saved. Press Rebuild video (or Regenerate commentary) on a video to hear it.'); lastSig = ''; load(); } catch (err) { say(err.message, true); } }
     if (d.vp) { await api('voices/assign', { pack: $('vpack').value, persona: d.vp, voice_id: e.target.value }); say('Voice saved for this style. Press Rebuild video on a video to hear it.'); lastSig = ''; load(); }
     if (d.edit) { await fetch('/api/lines/' + d.edit, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ line: e.target.value }) })
         .then(async r => { if (!r.ok) throw new Error((await r.json()).detail); }); say('Line saved. Press "Re-render video" to hear it.'); }
@@ -654,6 +666,7 @@ document.addEventListener('click', async e => {
     if (d.cutredo) { await api(`videos/${d.cutredo}/cutscenes/redetect`, {}); say('Looking at the video again...'); await refresh(); }
     if (d.rescan && confirm('Scan this video again for shops, animals and who died? It takes a few minutes and uses Gemini.')) { await api(`videos/${d.rescan}/rescan`, {}); say('Scanning again...'); await refresh(); }
     if (d.recap) { await api(`videos/${d.recap}/recaption`, {}); say('Redrawing the captions in the chosen look...'); await refresh(); }
+    if (d.cvprev) { const sel = document.querySelector(`select[data-cv="${d.cvprev}"]`); if (!sel || !sel.value) { say('Choose a voice for this character first.', true); } else { say('Playing a sample...'); const r = await fetch('/api/voices/preview', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ voice_id: sel.value }) }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Preview failed'); new Audio(URL.createObjectURL(await r.blob())).play(); say(''); } }
     if (d.vprev) { const id = $('v_' + d.vprev).value; say('Playing a sample...'); const r = await fetch('/api/voices/preview', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ voice_id: id }) });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Preview failed'); new Audio(URL.createObjectURL(await r.blob())).play(); say(''); }
     if (d.rerender) { await api(`videos/${d.rerender}/rerender`, {}); say('Re-rendering with your edits...'); await refresh(); }

@@ -368,7 +368,7 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     chosen, blocked, possible = plan_commentary(all_beats, free, cutscenes.subtract_ranges(speech, blocks), length,
                                                 eager, target_lpm(), cap_commentary(), extra=extra, quiet_fn=quiet_fn,
                                                 travel_gap=travel_gap())
-    travel_kinds = travel.assign(chosen, notes)
+    travel_kinds = travel.assign(chosen, notes, channel.themes_for(opts["character"]))
     n_catch = channel.assign_catchphrases(chosen, cfg["phrases"], length, vid) if cfg["catch_on"] else 0
     db.run("UPDATE videos SET arm=? WHERE id=?", (arm, vid))
 
@@ -403,7 +403,7 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
         traceback.print_exc()   # the report is a courtesy and must never break a video
 
     set_status(vid, "voicing")
-    clips = voice.make_clips(lines, windows, system, work, pack=opts["pack"],
+    clips = voice.make_clips(lines, windows, system, work, pack=opts["pack"], character=opts["character"],
                              progress=progress_cb(vid, "Voice lines"))
     # Save the lines before the long caption step: if anything stops during captioning, the commentary and the
     # voice clips survive and Redo captions can finish the video without writing or speaking anything again.
@@ -589,7 +589,7 @@ def rerender(vid):
         set_status(vid, "voicing")
         opts = video_opts(v)
         system = writer.build_system(_style(v)["text"], opts)
-        clips = voice.make_clips(lines, windows, system, workdir(vid), pack=opts["pack"],
+        clips = voice.make_clips(lines, windows, system, workdir(vid), pack=opts["pack"], character=opts["character"],
                                  progress=progress_cb(vid, "Voice lines"))
         _finish(vid, lines, clips, segs, workdir(vid) / "source.mp4", blocks)
         for ln in lines:

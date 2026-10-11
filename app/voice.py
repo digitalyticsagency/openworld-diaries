@@ -66,7 +66,7 @@ def duration(path):
     return float(r.stdout.strip())
 
 
-def make_clips(lines, windows, system, work, pack=None, progress=None):
+def make_clips(lines, windows, system, work, pack=None, progress=None, character=None):
     """Render each line. Real audio length is re-checked against the speech windows."""
     cdir = Path(work) / "clips"
     cdir.mkdir(exist_ok=True)
@@ -78,7 +78,7 @@ def make_clips(lines, windows, system, work, pack=None, progress=None):
             progress(n, len(lines))
         if ln.get("silent") or ln.get("dropped"):
             continue  # a thought is captioned, never voiced; a dropped line is not used at all
-        voice = voices.resolve(pack, ln["persona"])
+        voice = voices.resolve(pack, ln["persona"], character)
         if not voice:
             raise RuntimeError(f"No voice set for {ln['persona']}. Choose one in the app or set ELEVEN_VOICE_{ln['persona'].upper()} in .env")
         path = cdir / f"c_{n:03d}.mp3"

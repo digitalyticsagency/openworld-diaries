@@ -86,6 +86,11 @@ GTA V and GTA VI have their own knowledge packs and ten styles. The scan also re
 ## John Marston
 Red Dead Redemption (the first game) has its own knowledge pack and speaks as **John Marston**: laconic, weathered, loyal to his family. Red Dead Redemption 2's pack also has a short note for the epilogue, where the player controls him. Every video can also have its own **Character** (optional box when you confirm the style, and next to Regenerate), for example John Marston for the epilogue of a Red Dead 2 video, while other videos keep your saved character. A character chosen for one video never changes the saved one, and John's surname is kept out of daydreams like the other story names.
 
+## A different voice for each character
+Under **Voices**, "A voice for each character" lets Arthur Morgan and John Marston have voices of their own. When a video's character is one of them, every line is spoken in that voice instead of the style's, so John sounds different from Arthur. Left on "The style's voice", the style's own is used. A video as John with no voice chosen shows a reminder.
+
+Each of them also has his own ten daydream themes (Arthur: a cabin by a lake, a horse he never has to sell, a quiet porch; John: a ranch with a fence line of his own, a table with his family at it, teaching a boy to ride). They stay generic: real names are still never used in a daydream.
+
 ## Caption looks
 
 Dialogue subtitles and the inner voice each have their own style and position, chosen in Voice with a live preview on a frame of your own video.

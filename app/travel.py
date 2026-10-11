@@ -110,8 +110,9 @@ def memory_event(scenes, t, used):
     return (best[1], best[2]) if best else None
 
 
-def assign(chosen, scenes):
+def assign(chosen, scenes, themes=None):
     """Give every quiet-travel thought a kind and the real facts behind it. Rewrites the opportunity's why."""
+    themes = themes or THEMES
     spots = sorted((o for o in chosen if o.get("kind") == "daydream"), key=lambda o: o["t"])
     last, theme_n, used_mem, counts = None, 0, set(), {}
     for o in spots:
@@ -138,7 +139,7 @@ def assign(chosen, scenes):
                    f"One short private thought about it, and put {mem[0]} in callback_t.")
         else:
             why = ("Quiet travel: nothing is happening and nobody is near. A wistful private thought about a quiet future. "
-                   f"Keep it generic and never name a real character. Theme for this one: {THEMES[theme_n % len(THEMES)]}.")
+                   f"Keep it generic and never name a real character. Theme for this one: {themes[theme_n % len(themes)]}.")
             theme_n += 1
         o["why"], o["travel"] = why, kind
         o["kinds"] = ["daydream", f"travel_{kind}"]

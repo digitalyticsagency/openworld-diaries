@@ -8,6 +8,28 @@ from .config import LEAD, TAIL
 THEMES = ["a small farm of his own", "a family someday", "waking up beside someone he loves", "a quiet porch at dusk",
           "teaching a child to ride", "a life without running", "someone waiting by a lit window", "a garden and a dog by the fire",
           "a morning with nowhere to be", "being someone's reason to come home"]
+CHARACTER_THEMES = {
+    "morgan": ["a cabin by a lake that nobody is hunting him at", "an afternoon with a sketchbook and nothing to do",
+               "a horse he never has to sell", "growing old somewhere quiet", "a town where his name means nothing",
+               "a porch, a pipe and the evening", "being remembered for more than the worst of it", "a field of his own to plant",
+               "a morning he sleeps straight through", "a road that leads somewhere instead of away"],
+    "marston": ["a ranch with a fence line of his own", "a table with his own family sitting at it",
+                "teaching a boy to read the weather and sit a horse", "a morning when nobody rides up the road",
+                "a barn he built with his own hands", "a name with no bounty on it", "dusk over land that is finally his",
+                "being the kind of father he wishes he had had", "a quiet that does not mean trouble coming",
+                "mending a fence instead of picking a fight"],
+}
+
+
+def themes_for(character):
+    """The daydream themes for this character: his own if he has them, else the general ones. Generic, never a real name."""
+    c = (character or "").lower()
+    for key, themes in CHARACTER_THEMES.items():
+        if key in c or (key == "morgan" and "arthur" in c):
+            return themes
+    return THEMES
+
+
 DEFAULTS = {
     "intro_text": "Welcome to the channel, folks. Let's see where the trail takes us.",
     "outro_text": "Thanks for riding along. Like and subscribe, and I'll see you on the next trail.",
