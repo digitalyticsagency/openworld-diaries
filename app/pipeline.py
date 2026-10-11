@@ -403,6 +403,7 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
         traceback.print_exc()   # the report is a courtesy and must never break a video
 
     set_status(vid, "voicing")
+    _save_lines(vid, lines)       # written lines must survive a failed voice call: Rebuild video then voices them without rewriting
     clips = voice.make_clips(lines, windows, system, work, pack=opts["pack"], character=opts["character"],
                              progress=progress_cb(vid, "Voice lines"))
     # Save the lines before the long caption step: if anything stops during captioning, the commentary and the

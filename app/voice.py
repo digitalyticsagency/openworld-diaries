@@ -1,6 +1,9 @@
+import hashlib
 import os
 import re
+import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import requests
@@ -24,17 +27,60 @@ def _settings(emotion):
     return {"stability": 0.65, "similarity_boost": 0.9, "style": 0.1, "use_speaker_boost": True}
 
 
+RETRY_WAITS = (2, 5, 10, 20)         # seconds before each new try when the connection or the service hiccups
+TRANSIENT = {429, 500, 502, 503, 504}
+TIMEOUT = (15, 120)                  # connect, read
+
+
+def _post(url, headers, body):
+    """One request, tried again after a short wait when the network or the service has a hiccup. A wrong key or a
+    bad request is not retried: it would only fail the same way."""
+    last = None
+    for wait in (0,) + RETRY_WAITS:
+        if wait:
+            time.sleep(wait)
+        try:
+            r = requests.post(url, headers=headers, json=body, timeout=TIMEOUT)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            last = e
+            continue
+        if r.status_code in TRANSIENT:
+            last = requests.exceptions.HTTPError(f"{r.status_code} from the voice service", response=r)
+            continue
+        return r
+    raise last
+
+
 def tts(text, voice_id, emotion, out):
     body = {"text": text, "model_id": os.environ.get("ELEVEN_MODEL", "eleven_multilingual_v2"),
             "voice_settings": _settings(emotion), "seed": VOICE_SEED}   # a fixed seed keeps takes repeatable
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
     headers = {"xi-api-key": llm.key("ELEVENLABS_API_KEY")}
-    r = requests.post(url, headers=headers, json=body, timeout=120)
+    r = _post(url, headers, body)
     if r.status_code == 422 and "seed" in r.text:       # a model that does not take a seed
         body.pop("seed")
-        r = requests.post(url, headers=headers, json=body, timeout=120)
+        r = _post(url, headers, body)
     r.raise_for_status()
     Path(out).write_bytes(r.content)
+
+
+def _cache_key(text, voice_id, emotion):
+    raw = "|".join([voice_id or "", text, emotion or "", os.environ.get("ELEVEN_MODEL", "eleven_multilingual_v2"), str(VOICE_SEED),
+                    repr(_settings(emotion)), str(TARGET_MEAN_DB)])
+    return hashlib.sha1(raw.encode()).hexdigest()
+
+
+def spoken(text, voice_id, emotion, out, cache_dir):
+    """A leveled take of this line at `out`. The same line in the same voice is only ever paid for once: after a failure
+    the retry reuses every take that already succeeded."""
+    cache = Path(cache_dir) / f"{_cache_key(text, voice_id, emotion)}.mp3"
+    if cache.exists():
+        shutil.copyfile(cache, out)
+        return
+    tts(text, voice_id, emotion, out)
+    level_clip(out)
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(out, cache)
 
 
 def mean_db(path):
@@ -82,15 +128,13 @@ def make_clips(lines, windows, system, work, pack=None, progress=None, character
         if not voice:
             raise RuntimeError(f"No voice set for {ln['persona']}. Choose one in the app or set ELEVEN_VOICE_{ln['persona'].upper()} in .env")
         path = cdir / f"c_{n:03d}.mp3"
-        tts(ln["line"], voice, ln.get("emotion"), path)
-        level_clip(path)
+        spoken(ln["line"], voice, ln.get("emotion"), path, Path(work) / "voice_cache")
         d = duration(path)
         if d > ln["max_duration"]:
             budget = max(3, int(ln["max_duration"] * WORDS_PER_SEC))
             ln["line"] = claude(system, f"Shorten to at most {min(budget, MAX_WORDS)} words, same meaning "
                                         f"and emotion. Return only the line text: {ln['line']}", 300).strip().strip('"')
-            tts(ln["line"], voice, ln.get("emotion"), path)
-            level_clip(path)
+            spoken(ln["line"], voice, ln.get("emotion"), path, Path(work) / "voice_cache")
             d = duration(path)
         if d > ln["max_duration"] or not guard.clip_fits(ln["start"], d, windows):
             ln["dropped"] = True   # never talk over speech
