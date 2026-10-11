@@ -255,7 +255,7 @@ const api = async (path, body) => {
   return j;
 };
 const say = (t, err) => { $('msg').textContent = t; $('msg').className = err ? 'err' : ''; };
-const OPEN = new Set(), ROPEN = new Set();
+const OPEN = new Set(), ROPEN = new Set(), POPEN = new Set();
 let ready = false, lastSig = '';
 const LEVEL = n => n<=4 ? 'Sparse · only the strongest moments' : n<=7 ? 'Measured · strong moments and a few quiet thoughts' : 'Balanced to chatty · most meaningful moments, plus atmosphere in long silences';
 const WORKING = ['downloading','detecting','listening','watching','cutscenes','writing','voicing','captioning','uploading'];
@@ -377,6 +377,7 @@ function card(v) {
       ${v.has_video && !busy ? `<a class="s" href="/api/videos/${v.id}/download" download>Download video</a>` : ''}
       <button class="s" data-lines="${v.id}">Lines</button>
       ${v.stats ? `<button class="s" data-report="${v.id}">Brain report</button>` : ''}
+      ${v.has_video && !BUSYLIKE.includes(v.status) ? `<button class="s" data-pack="${v.id}">Packaging</button>` : ''}
       ${v.has_video && !BUSYLIKE.includes(v.status) ? `<button class="s" data-cuts="${v.id}">Cutscenes${v.cut_count ? ' (' + v.cut_count + ')' : ''}</button>` : ''}
       ${!busy && v.has_video ? `
         <select data-regsel="${v.id}:amount" aria-label="Commentary amount"><option value="">Same eagerness</option><option value="4" ${r.amount==='4'?'selected':''}>Sparse</option><option value="8" ${r.amount==='8'?'selected':''}>Balanced</option><option value="10" ${r.amount==='10'?'selected':''}>Chatty</option></select>
@@ -392,7 +393,7 @@ function card(v) {
       ${v.status==='failed' ? `<button class="s" data-retry="${v.id}">Retry</button>` : ''}
       ${!busy ? `<button class="s danger" data-del="${v.id}">Delete</button>` : ''}
       <span class="small">${v.combined_score!=null ? 'score ' + v.combined_score.toFixed(1) : ''}</span>
-    </div>${styleHint(v)}${voicesLine(v)}${brainLine(v)}<div id="c${v.id}"></div><div id="r${v.id}"></div><div id="l${v.id}"></div></div>`;
+    </div>${styleHint(v)}${voicesLine(v)}${brainLine(v)}<div id="c${v.id}"></div><div id="r${v.id}"></div><div id="p${v.id}"></div><div id="l${v.id}"></div></div>`;
 }
 
 function renderVusers() {
@@ -451,6 +452,7 @@ async function load() {
   $('videos').innerHTML = s.videos.length ? s.videos.map(card).join('') : 'Nothing yet. Upload a video above.';
   for (const id of OPEN) showLines(id);
   for (const id of ROPEN) showReport(id);
+  for (const id of POPEN) showPackaging(id);
   for (const id of OPENC) showCuts(id);
   $('memory').innerHTML = s.memory.length ? s.memory.map(m =>
     `<div class="mem"><span>${esc(m.text)} <span class="small">${m.kind}${m.count>1 ? ' · seen ' + m.count + 'x' : ''}</span></span><button class="s danger" data-forget="${m.id}">Forget</button></div>`).join('')
@@ -478,6 +480,22 @@ async function showCuts(id) {
     <div class="small">After changing ranges, press <strong>Rebuild video</strong> (lines inside new cutscenes are dropped) or <strong>Regenerate commentary</strong> to plan again.</div></div>`;
 }
 
+const copyBtn = text => `<button class="s" data-copy="${encodeURIComponent(text)}">Copy</button>`;
+async function showPackaging(id) {
+  const box = $('p' + id); if (!box) return;
+  let p; try { p = await api(`videos/${id}/packaging`); } catch (e) {
+    box.innerHTML = `<div class="prog">No packaging yet. <button class="s primary" data-mkpack="${id}">Make packaging</button><span class="small"> Titles, description, tags, a pinned comment and three thumbnails, written only from what is in the video.</span></div>`; return; }
+  const t = Date.now();
+  box.innerHTML = `<div class="prog"><strong>Title options</strong> <span class="small">(only true claims: no clickbait wording is allowed)</span></div>` +
+    p.titles.map(x => `<div class="ln"><span>${esc(x)}</span>${copyBtn(x)}</div>`).join('') +
+    `<div class="prog"><strong>Description</strong> ${copyBtn(p.description)}</div><pre class="small" style="white-space:pre-wrap">${esc(p.description)}</pre>
+    <div class="prog"><strong>Tags</strong> ${copyBtn(p.tags.join(', '))}</div><div class="small">${esc(p.tags.join(', '))}</div>
+    <div class="prog"><strong>Pinned comment</strong> ${copyBtn(p.pinned_comment)}</div><div class="small">${esc(p.pinned_comment)}</div>
+    <div class="prog"><strong>Thumbnails</strong> <span class="small">from ${mmss(p.thumb_at)}</span></div>
+    <div class="thumbs" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">` +
+    p.thumb_texts.map((x, i) => { const v = 'ABC'[i]; return `<div><img src="/api/videos/${id}/thumb/${v}?t=${t}" alt="Thumbnail ${v}: ${esc(x)}" style="width:100%;border-radius:8px;display:block"><a class="s" href="/api/videos/${id}/thumb/${v}" download>Download ${v}</a></div>`; }).join('') +
+    `</div><div class="acts"><button class="s" data-mkpack="${id}">Make new packaging</button></div>`;
+}
 async function showReport(id) {
   const box = $('r' + id); if (!box) return;
   let r; try { r = await api(`videos/${id}/report`); } catch (e) { box.innerHTML = `<div class="small">${esc(e.message)}</div>`; return; }
@@ -562,6 +580,9 @@ document.addEventListener('click', async e => {
   try {
     if (d.preset) { setAmount(+d.preset); await api('settings', { amount: +d.preset }); say('Commentary amount saved.'); }
     if (d.copychap) { const el = $('ch' + d.copychap); try { await navigator.clipboard.writeText(el.textContent); say('Chapters copied.'); } catch (_) { say('Select the chapters and copy them by hand.', true); } }
+    if (d.copy) { try { await navigator.clipboard.writeText(decodeURIComponent(d.copy)); say('Copied.'); } catch (_) { say('Copy failed. Select the text and copy it by hand.', true); } }
+    if (d.pack) { const id = +d.pack; POPEN.has(id) ? POPEN.delete(id) : POPEN.add(id); if (POPEN.has(id)) showPackaging(id); else $('p'+id).innerHTML=''; }
+    if (d.mkpack) { say('Writing the packaging and drawing the thumbnails...'); try { await api(`videos/${d.mkpack}/packaging`, {}); say('Packaging ready.'); } catch (e) { say(e.message, true); } POPEN.add(+d.mkpack); showPackaging(+d.mkpack); }
     if (d.report) { const id = +d.report; ROPEN.has(id) ? ROPEN.delete(id) : ROPEN.add(id); if (ROPEN.has(id)) showReport(id); else $('r'+id).innerHTML=''; }
     if (d.lines) { const id = +d.lines; OPEN.has(id) ? OPEN.delete(id) : OPEN.add(id); if (OPEN.has(id)) showLines(id); else $('l'+id).innerHTML=''; }
     if (d.approve && confirm('Make this video public on YouTube?')) { await api(`videos/${d.approve}/approve`, {}); say('Published.'); await refresh(); }

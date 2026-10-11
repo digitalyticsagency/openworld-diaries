@@ -361,6 +361,34 @@ def lines(vid: int):
                    "COALESCE(dropped,0) dropped, COALESCE(silent,0) silent, note FROM lines WHERE video_id=? ORDER BY start", (vid,))
 
 
+@app.get("/api/videos/{vid}/packaging")
+def get_packaging(vid: int):
+    f = pipeline.workdir(vid) / "packaging.json"
+    if not f.exists():
+        raise HTTPException(404, "No packaging yet. Press Make packaging.")
+    return json.loads(f.read_text())
+
+
+@app.post("/api/videos/{vid}/packaging")
+def make_packaging(vid: int):
+    if not db.one("SELECT id FROM videos WHERE id=?", (vid,)):
+        raise HTTPException(404, "No such video.")
+    if not (pipeline.workdir(vid) / "source.mp4").exists():
+        raise HTTPException(400, "The source video is not here any more, so thumbnails cannot be made.")
+    try:
+        return pipeline.package(vid)
+    except Exception as e:
+        raise HTTPException(400, str(e)[:300])
+
+
+@app.get("/api/videos/{vid}/thumb/{variant}")
+def thumb(vid: int, variant: str):
+    path = pipeline.workdir(vid) / f"thumb_{variant}.jpg"
+    if variant not in ("A", "B", "C") or not path.exists():
+        raise HTTPException(404, "No such thumbnail.")
+    return FileResponse(path, media_type="image/jpeg", filename=f"thumbnail_{vid}_{variant}.jpg")
+
+
 @app.get("/api/videos/{vid}/report")
 def brain_report(vid: int):
     f = pipeline.workdir(vid) / "report.json"

@@ -62,6 +62,11 @@ Each finished video has a **Brain report**: what it saw, what it said, how each 
 - **Honest only:** teasers and suspense lines are dropped if they use clickbait wording ("you won't believe", "shocking", "what happens next" and similar), and they may only use the facts in their reason.
 - **Chapters:** timestamped chapters for the YouTube description, from the activity runs in the scan (riding, hunting, shopping, gunfight, camp...). Shown in the Brain report with a Copy button. At least three are needed, the first starts at 0:00, and never more than twelve.
 
+## Packaging for YouTube
+Every finished video gets **Packaging** (button on the video, or Make packaging): 5 title options, a description with the chapters and a note that the commentary is AI-generated, tags, a pinned-comment question, and three thumbnails (white text bottom-left, yellow on a dark band, centred on a vignette) cut from the strongest real moment. Each piece has a Copy or Download button, and Make new packaging writes a fresh set.
+
+The model sees only a fact sheet built from the scan (game, chapters, strongest moments, animals and places really seen, a few spoken lines) and everything it returns is checked in code: no clickbait wording, titles under 100 characters and not shouting, thumbnail text of one to four words, a question that really ends in a question mark, and a plain true fallback for anything that fails.
+
 ## Caption looks
 
 Dialogue subtitles and the inner voice each have their own style and position, chosen in Voice with a live preview on a frame of your own video.

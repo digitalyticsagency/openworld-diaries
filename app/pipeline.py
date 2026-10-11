@@ -8,7 +8,7 @@ from pathlib import Path
 from . import (beats, captions, channel, cutscenes, db, detect, evolve, gaps, guard, memory, publisher, scenes, sentiment,
                sources, styles, transcript, travel, voice, writer)
 from . import report as brain_report
-from . import viral
+from . import packaging, thumbnail, viral
 from .config import DATA, MIN_GAP_FLOOR, TRAVEL_GAP_DEFAULT, TRAVEL_GAP_MIN
 
 
@@ -396,6 +396,10 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     evolve.rescore_video(vid)
     set_status(vid, "ready")
     try:
+        package(vid)
+    except Exception:
+        traceback.print_exc()   # packaging is a courtesy and must never break a finished video
+    try:
         memory.update(vid)
         evolve.cycle()
     except Exception:
@@ -413,6 +417,27 @@ def _save_lines(vid, lines):
                 ln.get("self_score"), ln.get("max_duration"), 1 if ln.get("dropped") else 0,
                 ln.get("trigger_t"), ln.get("callback_t"), ln.get("beat_kinds"), ln.get("salience"),
                 1 if ln.get("silent") else 0, ln.get("note")))
+
+
+def package(vid):
+    """Titles, description, tags, a pinned comment and three thumbnails, from what the video really contains."""
+    v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
+    work = workdir(vid)
+    notes, _ = _load(vid)
+    length = scenes.video_length(work / "source.mp4")
+    o = video_opts(v)
+    rows = [dict(r) for r in db.rows("SELECT start,line,silent,dropped,salience FROM lines WHERE video_id=? ORDER BY start", (vid,))]
+    fs = packaging.facts(o["game"], styles.PACKS[o["pack"]]["name"], length, notes,
+                         beats.find_beats(notes, evolve.kind_weights(), moral_mode()), viral.chapters(notes, length), rows)
+    pkg = packaging.generate(fs)
+    mi = pkg["thumb_moment"]
+    at = fs["moments"][mi]["t"] if mi is not None else length / 2
+    frame = thumbnail.grab(work / "source.mp4", at, work / "thumb_src.jpg")
+    for var, text in zip(thumbnail.VARIANTS, pkg["thumb_texts"]):
+        thumbnail.render(frame, text, var, work / f"thumb_{var}.jpg")
+    pkg["thumb_at"] = round(at, 1)
+    (work / "packaging.json").write_text(json.dumps(pkg, indent=2))
+    return pkg
 
 
 def recaption(vid):
