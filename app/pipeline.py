@@ -648,7 +648,6 @@ def make_clips(vid):
 def recaption(vid):
     """New caption look on the same lines and the same voice clips: no new speech is made."""
     def run():
-        v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
         notes, segs = _load(vid)
         work = workdir(vid)
         rows = db.rows("SELECT * FROM lines WHERE video_id=? ORDER BY start", (vid,))

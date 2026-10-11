@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 from . import ambience, analytics, thinking, captions, comments, trends, cutscenes, db, envfile, evolve, google_auth, knowledge, pipeline, series, sources, styles, voices
@@ -105,6 +105,30 @@ async def lifespan(app):
 
 
 app = FastAPI(lifespan=lifespan)
+
+LOCAL_NAMES = {"localhost", "127.0.0.1", "[::1]", "testserver"}
+
+
+def _local_host(value):
+    """True for localhost, 127.0.0.1 or [::1] with any port (and the test client)."""
+    host = (value or "").lower()
+    host = host.split("://", 1)[-1].split("/", 1)[0]
+    name = host.rsplit(":", 1)[0] if host.count(":") == 1 or (host.startswith("[") and "]:" in host) else host
+    return name in LOCAL_NAMES
+
+
+@app.middleware("http")
+async def only_this_computer(request: Request, call_next):
+    """The app controls paid accounts and files, so only its own page may talk to it. A request whose Host is not this
+    computer (DNS rebinding) or that another website's page sent (a cross-site Origin) is refused before it does anything."""
+    if not _local_host(request.headers.get("host")):
+        return JSONResponse({"detail": "This app only answers on this computer."}, status_code=403)
+    if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+        origin = request.headers.get("origin")
+        if (origin and origin != "null" and not _local_host(origin)) or origin == "null" \
+                or request.headers.get("sec-fetch-site") == "cross-site":
+            return JSONResponse({"detail": "Only the app's own page can change things."}, status_code=403)
+    return await call_next(request)
 
 
 class Toggle(BaseModel):
@@ -574,7 +598,7 @@ def make_packaging(vid: int):
 
 
 @app.get("/api/videos/{vid}/thumb/{variant}")
-def thumb(vid: int, variant: str):
+def packaging_thumb(vid: int, variant: str):
     path = pipeline.workdir(vid) / f"thumb_{variant}.jpg"
     if variant not in ("A", "B", "C") or not path.exists():
         raise HTTPException(404, "No such thumbnail.")

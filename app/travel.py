@@ -126,11 +126,14 @@ def assign(chosen, scenes, themes=None, reflect=None, note=""):
         facts, horse = notice_facts(scenes, t), horse_facts(scenes, t)
         mem = memory_event(scenes, t, used_mem)
         ready = {"notice": bool(facts), "goal": bool(facts), "mood": True, "horse": bool(horse), "memory": bool(mem), "wistful": True}
+        kind = None
         for k in range(len(order)):
             cand = order[(pos + k) % len(order)]
             if ready[cand] and cand != last:
                 kind, pos = cand, (pos + k + 1) % len(order)
                 break
+        if kind is None:                  # nothing else is ready: the plain wistful thought is always possible
+            kind = "wistful"
         if kind == "notice":
             why = ("Quiet travel. Notice something that is really there and let it become a small private thought. "
                    "What the scan saw: " + "; ".join(facts) + ". Mention only these.")

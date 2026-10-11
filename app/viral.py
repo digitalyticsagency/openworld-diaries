@@ -81,7 +81,7 @@ def buildup_cue(scenes, t):
 
 def cliffhangers(all_beats, scenes, gaps, length):
     """Short suspense lines a few seconds before big moments. Only where the scan shows a real build-up."""
-    out, last = [], -1e9
+    out = []
     for b in sorted((b for b in all_beats if b["salience"] >= CLIFF_MIN_SALIENCE and b["t"] >= CLIFF_AFTER
                      and not any(k.startswith("npc_") for k in b["kinds"])), key=lambda b: -b["salience"]):
         if len(out) >= CLIFF_MAX:

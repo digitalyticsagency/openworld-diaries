@@ -1,7 +1,6 @@
 """What the AI remembers about the player's gameplay across videos."""
 import json
 import time
-from pathlib import Path
 
 from . import db
 from .config import DATA, PROMPTS
