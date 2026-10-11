@@ -71,17 +71,25 @@ def intro_opportunity(gaps, length, cfg, after=0.0):
 
 
 def outro_opportunity(gaps, length, cfg, intro=None):
-    """The last gap that can hold a thank-you and a like-and-subscribe."""
-    for g in reversed(gaps):
-        if g["start"] < length * 0.5:
-            break
-        t = max(g["start"] + LEAD, g["end"] - 9.0)
-        cap, mw = _spot(g, t)
-        if mw >= 8 and (not intro or t - intro["t"] > 30):
-            return {"id": "outro", "t": round(t, 2), "beat_t": None, "salience": 98.0, "kinds": ["outro"], "kind": "full",
-                    "why": "OUTRO. Thank the viewers and ask them to like and subscribe, in your own words. You must use the "
-                           "words 'like' and 'subscribe'. This is the only time you ask for that.",
-                    "max_words": mw, "max_duration": round(cap, 2), "must_include": ["like", "subscribe"]}
+    """The last place that can hold a thank-you and a like-and-subscribe, in the second half of the video. A gap that starts
+    early but runs on (a video with no speech is one gap from start to end) counts: the outro goes near its end. When no gap
+    has room for a sentence, a very short one ('Like and subscribe.') is used instead of none."""
+    half = length * 0.5
+    for min_words in (8, 4):
+        for g in reversed(gaps):
+            if g["end"] <= half:
+                break
+            t = max(g["start"] + LEAD, g["end"] - 9.0, half)
+            if t >= g["end"]:
+                continue
+            cap, mw = _spot(g, t)
+            if mw >= min_words and (not intro or t - intro["t"] > 30):
+                why = ("OUTRO. Thank the viewers and ask them to like and subscribe, in your own words. You must use the "
+                       "words 'like' and 'subscribe'. This is the only time you ask for that." if min_words >= 8 else
+                       f"OUTRO, very short: there is room for only {mw} words. Say only that they should like and subscribe. "
+                       "You must use the words 'like' and 'subscribe'. This is the only time you ask for that.")
+                return {"id": "outro", "t": round(t, 2), "beat_t": None, "salience": 98.0, "kinds": ["outro"], "kind": "full",
+                        "why": why, "max_words": mw, "max_duration": round(cap, 2), "must_include": ["like", "subscribe"]}
     return None
 
 

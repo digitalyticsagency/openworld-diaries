@@ -115,6 +115,11 @@ When you confirm a video's style (next to Character), **What is he thinking abou
 
 Only the quiet thoughts while riding or walking follow it: every other one becomes a reflection on your themes (one theme after another, line by line), and the rest stay grounded in what the scan shows. Reactions to fights, shops, animals and speech are untouched. Every reflection is generic (no real character's name, no story fact), your note is treated as a feeling to colour the thought and never as a fact, and the choice belongs to that one video.
 
+## Small rules that keep the commentary honest
+- **A manual lines-a-minute beats the calm pace.** If you ask for a number of lines a minute, the calm free-roam pace stands aside (it does not cap the eagerness or spread the road thoughts), and the video's stats say so.
+- **The closing line is never lost for want of a gap.** A video with no speech is one long gap; the outro now goes near its end instead of being skipped. When no gap has room for a sentence, a very short "Like and subscribe." is used.
+- **No invented time.** A line that claims this ride has gone on for hours ("an hour ago", "been riding for hours", "since this morning") in a video that is minutes long is dropped, and the writer is told not to. Idioms and memories ("I could do this all day", "for years") are left alone, and very long recordings are not judged.
+
 ## Caption looks
 
 Dialogue subtitles and the inner voice each have their own style and position, chosen in Voice with a live preview on a frame of your own video.

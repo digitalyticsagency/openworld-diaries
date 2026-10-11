@@ -106,10 +106,17 @@ CLICKBAIT = re.compile(r"(you won'?t believe|shocking|mind[- ]?blow|never seen a
                        r"what happens next|gone wrong|you need to see|must[- ]watch|goes viral|jaw[- ]?dropping)", re.I)
 
 
-def content_reason(ln, text):
+TIME_SPAN = re.compile(r"\b(an hour ago|hours ago|hours (?:now|in|into)|been riding for|been driving for|been walking for|"
+                       r"since this morning|since dawn)\b", re.I)      # claims about THIS ride; idioms and memories ("for years") are left alone
+LONGEST_PLAUSIBLE = 3600.0      # a video this short cannot show hours or days passing
+
+
+def content_reason(ln, text, length=None):
     """Rules about what a line may say, beyond when and where it may be."""
     if ln.get("opp_id") not in ("intro", "outro") and GREETING.search(text):
         return "greeting or subscribe line outside the intro and outro"
+    if length and length < LONGEST_PLAUSIBLE and TIME_SPAN.search(text) and ln.get("opp_id") not in ("intro", "outro"):
+        return "claims a time span the video does not show"
     kinds0 = set((ln.get("beat_kinds") or "").split(","))
     if kinds0 & {"hook", "cliffhanger"} and CLICKBAIT.search(text):
         return "clickbait wording in a teaser"
@@ -154,6 +161,7 @@ def dedupe(lines, previous):
 def enforce(lines, windows, scenes, min_gap=None, max_words=MAX_WORDS, blocks=None):
     """Return (kept, dropped). Dropped entries carry a 'reason'."""
     min_gap = MIN_GAP if min_gap is None else min_gap
+    length = (max((s.get("t", 0) for s in scenes), default=0) + 3.0) if scenes else None      # about how long the video is
     kept, dropped = [], []
     prev_end = prev_silent_end = -1e9
     for ln in sorted(lines, key=lambda x: x.get("start", 0)):
@@ -179,7 +187,7 @@ def enforce(lines, windows, scenes, min_gap=None, max_words=MAX_WORDS, blocks=No
             elif not callback_ok(ln, scenes):
                 reason = "refers to an event that did not happen"
             else:
-                reason = content_reason(ln, text)
+                reason = content_reason(ln, text, length)
             if reason:
                 dropped.append({**ln, "reason": reason})
             else:
@@ -204,8 +212,8 @@ def enforce(lines, windows, scenes, min_gap=None, max_words=MAX_WORDS, blocks=No
                 reason = "emotion not grounded in an on-screen event"
             elif not callback_ok(ln, scenes):
                 reason = "refers to an event that did not happen"
-            elif content_reason(ln, text):
-                reason = content_reason(ln, text)
+            elif content_reason(ln, text, length):
+                reason = content_reason(ln, text, length)
             else:
                 ln = {**ln, "line": text, "max_duration": round(maxd, 2)}
                 kept.append(ln)

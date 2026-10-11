@@ -53,7 +53,7 @@ def travel_gap():
     except ValueError:
         v = 0
     gap = max(TRAVEL_GAP_MIN, 60.0 / v) if v > 0 else TRAVEL_GAP_DEFAULT
-    return max(gap, CALM_TRAVEL_GAP) if calm_on() else gap
+    return max(gap, CALM_TRAVEL_GAP) if calm_active() else gap
 
 
 def daydream_on():
@@ -179,6 +179,11 @@ CALM_TRAVEL_GAP = 55.0   # and thoughts on the road are at least this far apart
 
 def calm_on():
     return db.get("calm_mode", "0") == "1"
+
+
+def calm_active():
+    """The calm pace applies unless the owner asked for a number of lines a minute: that explicit choice wins."""
+    return calm_on() and not target_lpm()
 
 
 def ambience_on():
@@ -470,7 +475,7 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     arm, offset = evolve.choose_arm(explicit)
     eager = amt + evolve.density_bias(opts["pack"]) + offset
     learned = round(eager - amt - offset, 1)       # what the brain learned, before the calm pace caps it
-    if calm_on():
+    if calm_active():
         eager = min(eager, CALM_EAGER)      # a calm free-roam video: only the strongest moments, long quiet stretches
     chosen, blocked, possible = plan_commentary(all_beats, free, cutscenes.subtract_ranges(speech, blocks), length,
                                                 eager, target_lpm(), cap_commentary(), extra=extra, quiet_fn=quiet_fn,
@@ -497,7 +502,7 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
         "beats": len(all_beats), "blocked_by_speech": len(blocked), "gaps": len(free),
         "micro_gaps": sum(1 for g in free if g["kind"] == "micro"), "planned": len(chosen),
         "lines": len(lines), "filled": filled, "eagerness": round(eager, 1), "arm": arm,
-        "slider": amt, "learned": learned, "calm": calm_on(),
+        "slider": amt, "learned": learned, "calm": calm_active(), "calm_overridden": calm_on() and not calm_active(),
         "silent": sum(1 for l in lines if l.get("silent")), "target_lpm": target_lpm(),
         "per_minute": round(len(lines) / (length / 60), 1), "possible_per_minute": possible,
         "cutscenes": len(cuts), "cutscene_seconds": cutscenes.total_seconds(cuts), "reactions": len(after),
