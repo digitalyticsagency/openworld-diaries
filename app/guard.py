@@ -138,6 +138,13 @@ SCENE_WINDOW = 15.0
 FUNCTION_END = {"a", "an", "the", "my", "your", "his", "her", "our", "their", "and", "but", "or", "of", "because", "if", "while", "than"}   # words no sentence can end on
 
 
+def written_style(text):
+    """True for a story line that reads like writing, not talking: a semicolon, a colon or a dash, or one very long sentence."""
+    if re.search(r"[;:\u2014\u2013]", text):
+        return True
+    return any(len(s.split()) > 34 for s in re.split(r"(?<=[.!?])\s+", text))
+
+
 def unfinished(text, min_words=3):
     """True for a line that stops mid-thought: it trails off with dots, does not end in a full stop, a question mark or an exclamation,
     ends on a joining word, or is too short to be a sentence."""
@@ -188,6 +195,8 @@ def content_reason(ln, text, length=None, scenes=None):
     kinds_early = set((ln.get("beat_kinds") or "").split(","))
     if "travel_story" in kinds_early and unfinished(text, 5 if "story_told" in kinds_early else 3):
         return "unfinished sentence"
+    if "story_told" in kinds_early and written_style(text):
+        return "written, not spoken"
     if length and length < LONGEST_PLAUSIBLE and TIME_SPAN.search(text) and ln.get("opp_id") not in ("intro", "outro") \
             and "story_told" not in kinds_early:
         return "claims a time span the video does not show"

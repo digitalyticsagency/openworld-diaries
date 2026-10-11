@@ -188,5 +188,20 @@ def chapters(scenes, length):
     return out if len(out) >= 3 else []
 
 
+def story_chapters(lines, bible):
+    """Chapters for a told story: the welcome, then each part under its short title, at the time its first line is spoken. Three are needed."""
+    if not bible:
+        return []
+    first = {}
+    for l in lines:
+        p = l.get("passage")
+        if p is not None and not l.get("dropped") and l.get("story") and p not in first:
+            first[p] = float(l["start"])
+    names = bible.get("part_titles") or []
+    out = [{"t": 0.0, "title": "Welcome"}] + [{"t": round(t, 1), "title": f"Part {p + 1}: {names[p] if p < len(names) else bible['title']}"}
+                                           for p, t in sorted(first.items())]
+    return out if len(out) >= 3 else []
+
+
 def chapters_text(chs):
     return "\n".join(f"{_mmss(c['t'])} {c['title']}" for c in chs)

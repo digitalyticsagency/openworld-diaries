@@ -21,14 +21,28 @@ MAX_BOOST_DB = 24.0      # some takes arrive very quiet
 FADE = 1.5               # a background bed fades in and out over this long, seconds
 
 
-STORY_SETTINGS = {"stability": 0.42, "similarity_boost": 0.9, "style": 0.35, "use_speaker_boost": True, "speed": 0.94}
+def _unit(text, salt=""):
+    """A fixed number between 0 and 1 for this text, so a line always gets the same treatment but no two lines get quite the same one."""
+    return int(hashlib.sha1((salt + text).encode()).hexdigest()[:6], 16) / 0xFFFFFF
 
 
-def _settings(emotion, story=False):
-    """Steady, so the same voice sounds like the same person on every line. Emotion only nudges expressiveness. A story is told a little
-    slower and looser, so it sounds like someone talking rather than reading."""
+SLOW_WORDS = ("tired", "low", "quiet", "soft", "slow", "weary", "heavy")
+WARM_WORDS = ("amused", "dry", "wry", "wistful", "warm", "rueful")
+
+
+def _settings(emotion, story=False, text="", delivery=""):
+    """Steady, so the same voice sounds like the same person on every line. Emotion only nudges expressiveness. A story is told slower
+    and looser, and every line a little differently (its own speed, steadiness and expressiveness within a narrow band), the way a person
+    never says two sentences the same way. The writer's own direction ("low, tired", "dry") nudges it further."""
     if story:
-        return dict(STORY_SETTINGS)
+        s = {"stability": round(0.36 + 0.14 * _unit(text, "a"), 3), "similarity_boost": 0.9,
+             "style": round(0.28 + 0.2 * _unit(text, "b"), 3), "use_speaker_boost": True, "speed": round(0.90 + 0.08 * _unit(text, "c"), 3)}
+        d = (delivery or "").lower()
+        if any(w in d for w in SLOW_WORDS):
+            s["speed"], s["stability"] = round(s["speed"] - 0.03, 3), round(min(0.6, s["stability"] + 0.05), 3)
+        if any(w in d for w in WARM_WORDS):
+            s["style"] = round(min(0.6, s["style"] + 0.08), 3)
+        return s
     if emotion in STRONG:
         return {"stability": 0.5, "similarity_boost": 0.9, "style": 0.3, "use_speaker_boost": True}
     return {"stability": 0.65, "similarity_boost": 0.9, "style": 0.1, "use_speaker_boost": True}
@@ -58,9 +72,14 @@ def _post(url, headers, body):
     raise last
 
 
-def tts(text, voice_id, emotion, out, story=False, prev=None, nxt=None):
-    body = {"text": text, "model_id": os.environ.get("ELEVEN_MODEL", "eleven_multilingual_v2"),
-            "voice_settings": _settings(emotion, story), "seed": VOICE_SEED}   # a fixed seed keeps takes repeatable
+def with_breaths(text):
+    """A short breath between the sentences of a story line, as a spoken-word tag the voice turns into a real pause (not after the last)."""
+    return re.sub(r"(?<=[.!?])\s+(?=[A-Z\"'])", ' <break time="0.35s" /> ', text.strip())
+
+
+def tts(text, voice_id, emotion, out, story=False, prev=None, nxt=None, delivery=""):
+    body = {"text": with_breaths(text) if story else text, "model_id": os.environ.get("ELEVEN_MODEL", "eleven_multilingual_v2"),
+            "voice_settings": _settings(emotion, story, text, delivery), "seed": VOICE_SEED}   # a fixed seed keeps takes repeatable
     if story and prev:                  # the lines either side, so the voice carries the sentence on instead of starting cold
         body["previous_text"] = prev[-300:]
     if story and nxt:
@@ -80,21 +99,21 @@ def tts(text, voice_id, emotion, out, story=False, prev=None, nxt=None):
     Path(out).write_bytes(r.content)
 
 
-def _cache_key(text, voice_id, emotion, story=False, prev=None, nxt=None):
+def _cache_key(text, voice_id, emotion, story=False, prev=None, nxt=None, delivery=""):
     raw = "|".join([voice_id or "", text, emotion or "", os.environ.get("ELEVEN_MODEL", "eleven_multilingual_v2"), str(VOICE_SEED),
-                    repr(_settings(emotion, story)), str(TARGET_MEAN_DB), str(story), prev or "", nxt or ""])
+                    repr(_settings(emotion, story, text, delivery)), str(TARGET_MEAN_DB), str(story), prev or "", nxt or "", "breaths-1" if story else ""])
     return hashlib.sha1(raw.encode()).hexdigest()
 
 
-def spoken(text, voice_id, emotion, out, cache_dir, story=False, prev=None, nxt=None):
+def spoken(text, voice_id, emotion, out, cache_dir, story=False, prev=None, nxt=None, delivery=""):
     """A leveled take of this line at `out`. The same line in the same voice is only ever paid for once: after a failure
     the retry reuses every take that already succeeded."""
-    cache = Path(cache_dir) / f"{_cache_key(text, voice_id, emotion, story, prev, nxt)}.mp3"
+    cache = Path(cache_dir) / f"{_cache_key(text, voice_id, emotion, story, prev, nxt, delivery)}.mp3"
     if cache.exists():
         shutil.copyfile(cache, out)
         return
     if story:
-        tts(text, voice_id, emotion, out, story=True, prev=prev, nxt=nxt)
+        tts(text, voice_id, emotion, out, story=True, prev=prev, nxt=nxt, delivery=delivery)
     else:
         tts(text, voice_id, emotion, out)
     level_clip(out)
@@ -131,6 +150,39 @@ def duration(path):
     return float(r.stdout.strip())
 
 
+PAUSE_RANGE = (1.0, 1.8)      # the breath between two lines of one story passage, in seconds
+
+
+def retime_story(kept, clips, windows):
+    """Lay the lines of each story passage out by their real audio: each starts a breath (of slightly different length each time) after the
+    one before ends, so the pauses sound like a person pausing rather than a plan. A line only moves if it still fits before the next
+    passage and clear of speech; otherwise it stays where it was planned. Returns the clips with their new start times."""
+    out = [list(c) for c in clips]
+    i = 0
+    while i < len(kept):
+        p = kept[i].get("passage")
+        if not kept[i].get("story") or p is None:
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(kept) and kept[j + 1].get("story") and kept[j + 1].get("passage") == p:
+            j += 1
+        limit = (out[j + 1][0] - 2.0) if j + 1 < len(out) else 1e9
+        cursor = out[i][0] + out[i][2]
+        for k in range(i + 1, j + 1):
+            start, d = out[k][0], out[k][2]
+            new = cursor + PAUSE_RANGE[0] + (PAUSE_RANGE[1] - PAUSE_RANGE[0]) * _unit(kept[k]["line"], "p")
+            if new + d <= limit and guard.clip_fits(new, d, windows):
+                start = new
+            elif start < cursor + 0.3 and cursor + 0.3 + d <= limit and guard.clip_fits(cursor + 0.3, d, windows):
+                start = cursor + 0.3
+            out[k][0] = start
+            kept[k]["start"] = round(start, 2)
+            cursor = start + d
+        i = j + 1
+    return [tuple(c) for c in out]
+
+
 def _neighbours(lines, n):
     """(the story line before, the story line after) for a line of a told story, when they follow within a few seconds; else (None, None)."""
     ln = lines[n]
@@ -148,7 +200,7 @@ def make_clips(lines, windows, system, work, pack=None, progress=None, character
     cdir.mkdir(exist_ok=True)
     for stale in cdir.glob("c_*"):   # clips from an earlier run must never be mistaken for this one's
         stale.unlink()
-    clips = []
+    clips, kept = [], []
     for n, ln in enumerate(lines):
         if progress:
             progress(n, len(lines))
@@ -159,20 +211,23 @@ def make_clips(lines, windows, system, work, pack=None, progress=None, character
             raise RuntimeError(f"No voice set for {ln['persona']}. Choose one in the app or set ELEVEN_VOICE_{ln['persona'].upper()} in .env")
         path = cdir / f"c_{n:03d}.mp3"
         prev, nxt = _neighbours(lines, n)
-        spoken(ln["line"], voice, ln.get("emotion"), path, Path(work) / "voice_cache", story=bool(ln.get("story")), prev=prev, nxt=nxt)
+        spoken(ln["line"], voice, ln.get("emotion"), path, Path(work) / "voice_cache", story=bool(ln.get("story")), prev=prev, nxt=nxt,
+               delivery=ln.get("delivery") or "")
         d = duration(path)
         if d > ln["max_duration"]:
             budget = max(3, int(ln["max_duration"] * WORDS_PER_SEC))
             ln["line"] = claude(system, f"Shorten to at most {min(budget, MAX_WORDS)} words, same meaning "
                                         f"and emotion. Return only the line text: {ln['line']}", 300).strip().strip('"')
-            spoken(ln["line"], voice, ln.get("emotion"), path, Path(work) / "voice_cache", story=bool(ln.get("story")), prev=prev, nxt=nxt)
+            spoken(ln["line"], voice, ln.get("emotion"), path, Path(work) / "voice_cache", story=bool(ln.get("story")), prev=prev, nxt=nxt,
+                   delivery=ln.get("delivery") or "")
             d = duration(path)
         if d > ln["max_duration"] or not guard.clip_fits(ln["start"], d, windows):
             ln["dropped"] = True   # never talk over speech
             ln["note"] = "no room for the voice"
             continue
         clips.append((ln["start"], path, d))
-    return clips
+        kept.append(ln)
+    return retime_story(kept, clips, windows)
 
 
 def _keep_only(windows):

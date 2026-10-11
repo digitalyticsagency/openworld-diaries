@@ -149,7 +149,7 @@ class ToldOpportunityTests(unittest.TestCase):
         self.assertIn("Nothing has been told yet", first["why"])
         self.assertIn("Begin the story in the middle of ordinary life", first["why"])
         self.assertIn("This part tells: The mug and the winter.", first["why"])
-        self.assertIn("Told so far: (1) The mug and the winter.", second_part["why"])
+        self.assertIn("The parts just before this one: (1) The mug and the winter.", second_part["why"])
         self.assertIn("This part tells: The quarrel.", second_part["why"])
         self.assertIn("picks up where the last part stopped", second_part["why"])
 
@@ -246,7 +246,7 @@ class VoiceDeliveryTests(unittest.TestCase):
         self.out = Path(tempfile.mkdtemp()) / "c.mp3"
 
     def test_a_story_is_told_slower_and_looser(self):
-        s, n = voice._settings("calm", story=True), voice._settings("calm")
+        s, n = voice._settings("calm", story=True, text="Then he left."), voice._settings("calm")
         self.assertLess(s["stability"], n["stability"])
         self.assertGreater(s["style"], n["style"])
         self.assertLess(s["speed"], 1.0)
@@ -257,7 +257,7 @@ class VoiceDeliveryTests(unittest.TestCase):
             voice.tts("Then he left.", "V", "calm", self.out, story=True, prev="He lent me his coat.", nxt="I never wrote.")
         body = p.call_args.kwargs["json"]
         self.assertEqual((body["previous_text"], body["next_text"]), ("He lent me his coat.", "I never wrote."))
-        self.assertEqual(body["voice_settings"]["speed"], 0.94)
+        self.assertTrue(0.90 <= body["voice_settings"]["speed"] <= 0.98)
         with mock.patch("app.voice.requests.post", return_value=Resp()) as p:
             voice.tts("Easy now.", "V", "calm", self.out)
         body = p.call_args.kwargs["json"]
@@ -293,7 +293,7 @@ class VoiceDeliveryTests(unittest.TestCase):
         lines = [{"start": 10.0, "line": "He lent me his coat that winter.", "persona": "character", "emotion": "calm", "max_duration": 9.0, "story": True},
                  {"start": 17.0, "line": "I never gave it back.", "persona": "character", "emotion": "calm", "max_duration": 9.0, "story": True}]
 
-        def fake(text, voice_id, emotion, out, story=False, prev=None, nxt=None):
+        def fake(text, voice_id, emotion, out, story=False, prev=None, nxt=None, delivery=""):
             calls.append((text, story, prev, nxt))
             Path(out).write_bytes(b"x")
         with mock.patch("app.voice.tts", side_effect=fake), mock.patch("app.voice.level_clip"), mock.patch("app.voice.duration", return_value=3.0), \

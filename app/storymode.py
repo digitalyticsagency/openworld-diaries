@@ -24,7 +24,7 @@ LINE_WORDS = (16, 18, 14, 20)     # about this many words in the lines of a pass
 PLAN_WPS = 2.1                    # planned speaking speed: a little slower than real, so the voice always fits with room to breathe
 PAUSE = 1.1                       # between lines of one passage
 QUIET_MIN = 6.0                   # at least this much silence after a passage
-MAX_PASSAGES = 12
+MAX_PASSAGES = 30
 
 
 def line_seconds(words):
@@ -66,8 +66,21 @@ def passages(notes, free, length, lpm, avoid=()):
                 out.append(lines)
                 idx += 1
                 span = lines[-1][0] + lines[-1][1] - lines[0][0]
-                t = lines[0][0] + max(span + QUIET_MIN, n_lines * 60.0 / clamp_lpm(lpm))
+                cycle = max(span + QUIET_MIN, n_lines * 60.0 / clamp_lpm(lpm)) * (0.85 + 0.3 * _wobble(idx))      # the quiet is not always the same length
+                t = lines[0][0] + cycle
     return sorted(out, key=lambda p: p[0][0])
+
+
+def frame_welcome_and_outro(intro, outro, bible):
+    """Make the welcome and the outro belong to the story: the welcome says a story is coming (and tells none of it), the outro closes
+    it by its title. Both still have to say 'welcome'/'channel' and 'like'/'subscribe', and they stay the only greeting and sign-off."""
+    title = bible["title"]
+    if intro:
+        intro["why"] += (f' This video is a man telling himself a story as he rides, called "{title}". Say, plainly and in your own words, that '
+                         "a story is coming on the ride, and do not tell any of it.")
+    if outro:
+        outro["why"] += (f' The story "{title}" has just ended. First close it with one plain sentence about it (not a moral and not a summary), '
+                         "then thank the viewers and ask them to like and subscribe.")
 
 
 def told_opps(passes, bible):
@@ -77,11 +90,11 @@ def told_opps(passes, bible):
     out = []
     for p, lines in enumerate(passes):
         beat = beats_[min(p, len(beats_) - 1)]
-        told = " ".join(f"({i + 1}) {b}" for i, b in enumerate(beats_[:p]))
+        told = " ".join(f"({i + 1}) {b}" for i, b in list(enumerate(beats_[:p]))[-2:])           # the last two parts, so a long story stays short to read
         for j, (t, dur, words) in enumerate(lines):
             last_line, last_part = j == len(lines) - 1, p == total - 1
             why = (f"STORY \"{bible['title']}\", part {p + 1} of {total}, line {j + 1} of {len(lines)}. He is telling himself a memory, in the "
-                   f"first person, in plain spoken words. " + (f"Told so far: {told}. " if told else "Nothing has been told yet. ")
+                   f"first person, in plain spoken words. " + (f"The parts just before this one: {told}. " if told else "Nothing has been told yet. ")
                    + f"This part tells: {beat} "
                    + ("Begin in a plain sentence or two that picks up where the last part stopped. " if j == 0 and p else
                       "Begin the story in the middle of ordinary life, plainly. " if j == 0 else "Carry straight on from the line before. ")

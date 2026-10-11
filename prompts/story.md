@@ -8,3 +8,10 @@ How to tell it so it sounds like a person, not a machine:
 - A little human texture is welcome, sparingly: a "well", a "mind you", a small correction, a dry aside. Contractions are natural. Keep his own way of talking, lightly.
 - If an opportunity is the old thread style (no story named), it is one private thought that continues the one before: still complete, plain sentences.
 - Stay inside the hard rules: no real character's name, no game's story, an emotion of calm, longing, amusement or none, and the word limit.
+
+How people really tell it, so it does not sound written:
+- Talk, do not compose. Run it together with "and", "so" and "but". Say "some forty dollars", "I think it was March", "or maybe it was the week after". Be a little vague and correct yourself now and then. Use the plain verb (went, said, got) over the fine one.
+- No semicolons, colons or dashes, and no sentence longer than a breath. Plain commas and full stops only.
+- Say what was said, plainly, the way it came out: "He said he'd manage." Do not describe the feeling; say what happened and what he did next.
+- No neat contrasts, no lines that sound like a caption ("for a man walking alone", "soft as cloth"), and no last line that sums it up. Prefer the small ordinary detail to the pretty one: "He'd gone over every crossing twice in pencil. Pressed so hard it came through the back."
+- Light on his own way of talking, never a costume.

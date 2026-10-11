@@ -509,7 +509,7 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     if calm_here:
         eager = min(eager, CALM_EAGER)      # a calm free-roam video: only the strongest moments, long quiet stretches
     chosen_themes = thinking.for_video(v)
-    story_info = None
+    story_info, story_bible = None, None
     if story_on:
         # a told story: a fresh, different one every time, in passages with quiet between them
         avoid = [(o["t"] - 1.0, o["t"] + min(o["max_duration"], 10.0) + 1.0) for o in (intro, outro) if o]
@@ -523,10 +523,12 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
         if bible:
             passes = passes[:len(bible["beats"])]
             story = storymode.told_opps(passes, bible)
+            storymode.frame_welcome_and_outro(intro, outro, bible)          # the welcome and the outro belong to this story
             chosen = sorted(story + [o for o in (intro, outro) if o], key=lambda o: o["t"])
             storybible.save(vid, bible)
             (work / "story.json").write_text(json.dumps(bible, indent=2))
             story_info = {"title": bible["title"], "parts": len(passes), "fallback": False}
+            story_bible = bible
         else:                 # no story could be made: the older thread of thoughts, so the video is not left without commentary
             story = storymode.plan(notes, free, length, story_lpm, chosen_themes, v.get("theme_note") if chosen_themes else "")
             chosen = beats._fit_to_neighbours(sorted(story + [o for o in (intro, outro) if o], key=lambda o: o["t"]))
@@ -553,6 +555,7 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     except Exception:       # the editor pass only polishes: if it cannot be read, the written lines stand
         traceback.print_exc()
     lines = channel.fix_lines(lines, chosen, cfg)      # the welcome and the like-and-subscribe really say so, once
+    story_chapters = viral.story_chapters(lines, story_bible) if story_bible else []
     written_travel = {}
     for l in lines:                       # the thoughts that were really written, not just planned
         for k in (l.get("beat_kinds") or "").split(","):
@@ -576,7 +579,7 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
         "travel": written_travel, "travel_planned": travel_kinds, "travel_gap": travel_gap(calm_here), "catchphrases": n_catch, "speech_reactions": sum(1 for l in lines if "npc_" in (l.get("beat_kinds") or "")),
         "knowledge": bool(opts.get("knowledge")) and bool(__import__("app.knowledge", fromlist=["x"]).name_for_game(opts["game"]))}), vid))
     (work / "dropped.json").write_text(json.dumps(dropped, indent=2))
-    chs = viral.chapters(notes, length)
+    chs = story_chapters or viral.chapters(notes, length)      # a told story is chaptered by its parts
     (work / "chapters.json").write_text(json.dumps({"chapters": chs, "text": viral.chapters_text(chs)}, indent=2))
     try:
         (work / "report.json").write_text(json.dumps(brain_report.build(
@@ -643,9 +646,17 @@ def package(vid):
     length = scenes.video_length(work / "source.mp4")
     o = video_opts(v)
     rows = [dict(r) for r in db.rows("SELECT start,line,silent,dropped,salience FROM lines WHERE video_id=? ORDER BY start", (vid,))]
+    story = None
+    if story_for(v)[0] and (work / "story.json").exists():
+        try:
+            b = json.loads((work / "story.json").read_text())
+            story = {"title": b["title"], "logline": (b["premise"].split(". ")[0].rstrip(".") + ".")}
+        except (ValueError, KeyError):
+            story = None
+    ch = json.loads((work / "chapters.json").read_text())["chapters"] if (work / "chapters.json").exists() else viral.chapters(notes, length)
     fs = packaging.facts(o["game"], styles.PACKS[o["pack"]]["name"], length, notes,
-                         beats.find_beats(notes, evolve.kind_weights(), moral_mode()), viral.chapters(notes, length), rows,
-                         episode=v.get("episode"), series=series.name())
+                         beats.find_beats(notes, evolve.kind_weights(), moral_mode()), ch, rows,
+                         episode=v.get("episode"), series=series.name(), story=story)
     pkg = packaging.generate(fs)
     mi = pkg["thumb_moment"]
     at = fs["moments"][mi]["t"] if mi is not None else length / 2

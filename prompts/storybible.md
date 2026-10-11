@@ -8,5 +8,6 @@ Return valid JSON only:
 {"title": "three to six plain words",
  "premise": "two plain sentences saying what happened",
  "beats": ["one or two sentences saying exactly what this part tells", ...],
+ "part_titles": ["two to four plain words naming each part, in order, as for a chapter list", ...],
  "ending": "one plain sentence for how the last part lands"}
-The beats array must have exactly the number of parts you are asked for, in order.
+The beats array and the part_titles array must each have exactly the number of parts you are asked for, in order.

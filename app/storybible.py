@@ -30,7 +30,7 @@ TURNS = ["a promise he broke", "a lie he told to protect someone", "a debt he ne
 OBJECTS = ["a pocket watch", "a borrowed coat", "a cracked mug", "a hand-drawn map", "a jar of nails", "a saddle blanket", "a harmonica", "a pair of boots"]
 TONES = ["bittersweet", "wry", "quietly regretful", "tender", "rueful", "plain and matter of fact"]
 AGES = ["when he was a boy of about ten", "at fifteen", "in his early twenties", "a few years back", "the year after he left home"]
-MAX_PARTS = 12
+MAX_PARTS = 30
 MIN_PARTS = 2
 
 
@@ -61,7 +61,9 @@ def validate(raw, parts):
     premise, title = _clean(raw.get("premise"), 400), _clean(raw.get("title"), 60)
     if len(beats) < MIN_PARTS or not premise or not title:
         return None
-    return {"title": title, "premise": premise, "beats": beats[:parts], "ending": _clean(raw.get("ending"), 300), "seed": raw.get("seed")}
+    titles = [_clean(t, 40) for t in (raw.get("part_titles") if isinstance(raw.get("part_titles"), list) else []) if isinstance(t, str)]
+    names = [(titles[i] if i < len(titles) and titles[i] else f"Part {i + 1}") for i in range(len(beats[:parts]))]
+    return {"title": title, "premise": premise, "beats": beats[:parts], "part_titles": names, "ending": _clean(raw.get("ending"), 300), "seed": raw.get("seed")}
 
 
 def make(parts, theme_ids=None, idea="", rng=None):
@@ -71,7 +73,7 @@ def make(parts, theme_ids=None, idea="", rng=None):
     user = {"parts": parts, "constraints": seed, "owner_idea": _clean(idea, 200) or None, "already_used_premises": used_premises()}
     for _ in range(2):
         try:
-            bible = validate(parse_json(claude((PROMPTS / "storybible.md").read_text(), json.dumps(user), 2500)), parts)
+            bible = validate(parse_json(claude((PROMPTS / "storybible.md").read_text(), json.dumps(user), 7000)), parts)
         except ValueError:
             bible = None
         if bible:
