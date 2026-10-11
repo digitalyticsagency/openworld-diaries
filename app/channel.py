@@ -21,6 +21,7 @@ def settings(get):
         return get(key, "1") == "1"
     phrases = [p.strip() for p in (get("catchphrases") or DEFAULTS["catchphrases"]).splitlines() if p.strip()]
     return {"intro_on": on("intro_on"), "outro_on": on("outro_on"), "catch_on": on("catch_on"),
+            "hook_on": on("hook_on"), "cliff_on": on("cliff_on"),
             "channel": (get("channel_name") or "").strip(),
             "intro_text": (get("intro_text") or DEFAULTS["intro_text"]).strip(),
             "outro_text": (get("outro_text") or DEFAULTS["outro_text"]).strip(), "phrases": phrases}
@@ -31,12 +32,12 @@ def _spot(g, t, want_words=18):
     return cap, min(22, gapmod.words_for(cap))
 
 
-def intro_opportunity(gaps, length, cfg):
-    """The first gap that can hold a welcome."""
+def intro_opportunity(gaps, length, cfg, after=0.0):
+    """The first gap that can hold a welcome, after the cold open if there is one."""
     for g in gaps:
         if g["start"] > length * 0.5:
             break
-        t = max(g["start"] + LEAD, 1.0)
+        t = max(g["start"] + LEAD, 1.0, after)
         cap, mw = _spot(g, t)
         if mw >= 8:
             name = cfg["channel"] or "the channel"

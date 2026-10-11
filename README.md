@@ -56,6 +56,12 @@ The scan is adaptive: the busiest third of a video is looked at every 2 seconds,
 
 Each finished video has a **Brain report**: what it saw, what it said, how each of the biggest moments ended (said, silent because someone was speaking, removed by a check, or not strong enough), and why each long quiet stretch was quiet.
 
+## Hooks, suspense and chapters
+- **Cold open:** in the first seconds, one short teaser for the strongest real moment later in the video (a scan event, never something someone said), then the welcome. It never spoils the outcome. Off with the switch in Channel lines.
+- **Suspense lines:** a few seconds before a big moment, a short tense line, only when the frames just before it really show something building (a hostile close by, an animal approaching, aiming, a fight starting). With no real cue there is no line, and the moment's own reaction always outranks it.
+- **Honest only:** teasers and suspense lines are dropped if they use clickbait wording ("you won't believe", "shocking", "what happens next" and similar), and they may only use the facts in their reason.
+- **Chapters:** timestamped chapters for the YouTube description, from the activity runs in the scan (riding, hunting, shopping, gunfight, camp...). Shown in the Brain report with a Copy button. At least three are needed, the first starts at 0:00, and never more than twelve.
+
 ## Caption looks
 
 Dialogue subtitles and the inner voice each have their own style and position, chosen in Voice with a live preview on a frame of your own video.

@@ -119,6 +119,8 @@ class Settings(BaseModel):
     ab_test: bool | None = None
     one_voice: bool | None = None
     daydream: bool | None = None
+    hook_on: bool | None = None
+    cliff_on: bool | None = None
     intro_on: bool | None = None
     outro_on: bool | None = None
     catch_on: bool | None = None
@@ -309,7 +311,7 @@ def settings(s: Settings):
         elif k == "personality":
             v = styles.personality_id(v)
         elif k in ("youtube_publish", "learn", "ask_style", "ab_test", "cap_commentary", "cap_dialogue", "cutscene_quiet", "one_voice",
-                    "daydream", "intro_on", "outro_on", "catch_on", "knowledge_on"):
+                    "daydream", "intro_on", "outro_on", "catch_on", "knowledge_on", "hook_on", "cliff_on"):
             v = "1" if v else "0"
         elif k == "amount":
             v = max(1, min(10, v))
@@ -364,7 +366,10 @@ def brain_report(vid: int):
     f = pipeline.workdir(vid) / "report.json"
     if not f.exists():
         raise HTTPException(404, "No brain report yet. It is written each time commentary is generated, so use Regenerate commentary.")
-    return json.loads(f.read_text())
+    out = json.loads(f.read_text())
+    ch = pipeline.workdir(vid) / "chapters.json"
+    out["chapters"] = json.loads(ch.read_text()) if ch.exists() else {"chapters": [], "text": ""}
+    return out
 
 
 @app.post("/api/videos/{vid}/approve")

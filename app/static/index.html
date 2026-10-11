@@ -176,6 +176,8 @@
     </fieldset>
     <fieldset class="grp"><legend>Channel lines</legend>
       <label for="chname">Channel name (optional)</label><input id="chname" placeholder="Open World Diaries">
+      <label class="sw" style="margin-top:10px"><input type="checkbox" id="hook_on" role="switch"><span><strong>A cold-open teaser before the welcome</strong><br><span class="small">One short line in the first seconds that teases the strongest real moment later in the video. It never spoils the outcome and never promises more than the video shows.</span></span></label>
+      <label class="sw"><input type="checkbox" id="cliff_on" role="switch"><span><strong>Suspense lines before big moments</strong><br><span class="small">A few seconds before a big moment, a short tense line, only when the scan shows something really building (a hostile close by, an animal approaching, aiming).</span></span></label>
       <label class="sw" style="margin-top:10px"><input type="checkbox" id="intro_on" role="switch"><span><strong>A welcome once at the start</strong></span></label>
       <input id="intro_text" aria-label="Welcome wording">
       <label class="sw" style="margin-top:10px"><input type="checkbox" id="outro_on" role="switch"><span><strong>Like and subscribe once near the end</strong></span></label>
@@ -286,7 +288,7 @@ function setAmount(n) {
 let ONEVOICE = true;
 function fillChannel(s) {
   $('dayd').checked = s.daydream; $('tlpm').value = s.travel_lpm || 0; $('know').checked = s.knowledge_on; $('moral').value = s.moral_mode;
-  const c = s.channel; $('chname').value = c.channel; $('intro_on').checked = c.intro_on; $('outro_on').checked = c.outro_on; $('catch_on').checked = c.catch_on;
+  const c = s.channel; $('chname').value = c.channel; $('hook_on').checked = c.hook_on; $('cliff_on').checked = c.cliff_on; $('intro_on').checked = c.intro_on; $('outro_on').checked = c.outro_on; $('catch_on').checked = c.catch_on;
   $('intro_text').value = c.intro_text; $('outro_text').value = c.outro_text; $('catchphrases').value = c.catchphrases;
 }
 const saveSetting = (id, key, get) => { $(id).onchange = async () => { try { await api('settings', { [key]: get() }); say('Saved. It applies to new and regenerated videos.'); } catch (e) { say(e.message, true); } }; };
@@ -484,6 +486,7 @@ async function showReport(id) {
     <br><strong>What it said:</strong> ${r.said.voiced} spoken, ${r.said.silent} silent thoughts${tk ? `; travel thoughts: ${esc(tk)}` : ''}; ${r.removed} lines removed by the safety checks.</div>
     <div class="prog"><strong>Key moments</strong></div>` +
     r.moments.map(m => `<div class="ln"><span class="t">${mmss(m.t)}</span><span>${esc(m.what)}</span><span class="small">${esc(m.result)}</span></div>`).join('') +
+    (r.chapters && r.chapters.chapters.length ? `<div class="prog"><strong>Chapters for the YouTube description</strong> <button class="s" data-copychap="${id}">Copy</button></div><pre class="small" id="ch${id}" style="white-space:pre-wrap">${esc(r.chapters.text)}</pre>` : '') +
     (r.quiet.length ? `<div class="prog"><strong>Long quiet stretches</strong></div>` + r.quiet.map(q => `<div class="ln"><span class="t">${mmss(q.from)}</span><span class="small">until ${mmss(q.to)}: ${esc(q.why)}</span></div>`).join('') : '');
 }
 async function showLines(id) {
@@ -528,7 +531,7 @@ document.querySelectorAll('[data-cap]').forEach(el => el.onchange = async () => 
 $('cprevkind').onchange = refreshPreview;
 saveSetting('dayd', 'daydream', () => $('dayd').checked); saveSetting('tlpm', 'travel_lpm', () => +$('tlpm').value || 0); saveSetting('know', 'knowledge_on', () => $('know').checked);
 saveSetting('moral', 'moral_mode', () => $('moral').value); saveSetting('chname', 'channel_name', () => $('chname').value);
-saveSetting('intro_on', 'intro_on', () => $('intro_on').checked); saveSetting('outro_on', 'outro_on', () => $('outro_on').checked);
+saveSetting('hook_on', 'hook_on', () => $('hook_on').checked); saveSetting('cliff_on', 'cliff_on', () => $('cliff_on').checked); saveSetting('intro_on', 'intro_on', () => $('intro_on').checked); saveSetting('outro_on', 'outro_on', () => $('outro_on').checked);
 saveSetting('catch_on', 'catch_on', () => $('catch_on').checked); saveSetting('intro_text', 'intro_text', () => $('intro_text').value);
 saveSetting('outro_text', 'outro_text', () => $('outro_text').value); saveSetting('catchphrases', 'catchphrases', () => $('catchphrases').value);
 $('cutq').onchange = async () => { await api('settings', { cutscene_quiet: $('cutq').checked }); say($('cutq').checked ? 'Cutscenes are kept silent and caption-free for new and rebuilt videos.' : 'Cutscenes are no longer treated specially.'); };
@@ -558,6 +561,7 @@ document.addEventListener('click', async e => {
   const d = e.target.dataset;
   try {
     if (d.preset) { setAmount(+d.preset); await api('settings', { amount: +d.preset }); say('Commentary amount saved.'); }
+    if (d.copychap) { const el = $('ch' + d.copychap); try { await navigator.clipboard.writeText(el.textContent); say('Chapters copied.'); } catch (_) { say('Select the chapters and copy them by hand.', true); } }
     if (d.report) { const id = +d.report; ROPEN.has(id) ? ROPEN.delete(id) : ROPEN.add(id); if (ROPEN.has(id)) showReport(id); else $('r'+id).innerHTML=''; }
     if (d.lines) { const id = +d.lines; OPEN.has(id) ? OPEN.delete(id) : OPEN.add(id); if (OPEN.has(id)) showLines(id); else $('l'+id).innerHTML=''; }
     if (d.approve && confirm('Make this video public on YouTube?')) { await api(`videos/${d.approve}/approve`, {}); say('Published.'); await refresh(); }

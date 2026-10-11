@@ -228,7 +228,8 @@ def _fit_to_neighbours(chosen):
         o = dict(chosen[i])
         if i + 1 < len(chosen):
             room = chosen[i + 1]["t"] - o["t"] - MIN_GAP_FLOOR
-            if o.get("must_include") and gapmod.words_for(room) < MUST_FIT_WORDS and not chosen[i + 1].get("must_include"):
+            need = o.get("must_fit") or (MUST_FIT_WORDS if o.get("must_include") else 0)
+            if need and gapmod.words_for(room) < need and not (chosen[i + 1].get("must_include") or chosen[i + 1].get("must_fit")):
                 chosen.pop(i + 1)       # the welcome and the outro outrank a neighbour that would squeeze them
                 continue
             if room < o["max_duration"]:

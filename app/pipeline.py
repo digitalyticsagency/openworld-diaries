@@ -8,6 +8,7 @@ from pathlib import Path
 from . import (beats, captions, channel, cutscenes, db, detect, evolve, gaps, guard, memory, publisher, scenes, sentiment,
                sources, styles, transcript, travel, voice, writer)
 from . import report as brain_report
+from . import viral
 from .config import DATA, MIN_GAP_FLOOR, TRAVEL_GAP_DEFAULT, TRAVEL_GAP_MIN
 
 
@@ -339,9 +340,12 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     free = gaps.free_gaps(windows, length)
     after = beats.after_cutscene(cuts, free, segs)
     cfg = channel.settings(db.get)
-    intro = channel.intro_opportunity(free, length, cfg) if cfg["intro_on"] else None
+    hook = viral.hook_opportunity(free, viral.strongest_moment(all_beats, length)) if cfg["hook_on"] else None
+    after_hook = hook["t"] + hook["max_duration"] + 0.8 if hook else 0.0      # the welcome follows the cold open
+    intro = channel.intro_opportunity(free, length, cfg, after=after_hook) if cfg["intro_on"] else None
     outro = channel.outro_opportunity(free, length, cfg, intro) if cfg["outro_on"] else None
-    extra = after + [o for o in (intro, outro) if o]
+    cliffs = viral.cliffhangers(all_beats, notes, free, length) if cfg["cliff_on"] else []
+    extra = after + [o for o in (hook, intro, outro) if o] + cliffs
     quiet_fn = beats.travel_quiet_fn(notes) if daydream_on() else (lambda t: False)
     arm, offset = evolve.choose_arm(explicit)
     eager = amt + evolve.density_bias(opts["pack"]) + offset
@@ -368,10 +372,14 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
         "per_minute": round(len(lines) / (length / 60), 1), "possible_per_minute": possible,
         "cutscenes": len(cuts), "cutscene_seconds": cutscenes.total_seconds(cuts), "reactions": len(after),
         "daydreams": sum(1 for l in lines if "daydream" in (l.get("beat_kinds") or "")),
+        "hook": any(l.get("opp_id") == "hook" for l in lines),
+        "cliffhangers": sum(1 for l in lines if "cliffhanger" in (l.get("beat_kinds") or "")),
         "intro": any(l.get("opp_id") == "intro" for l in lines), "outro": any(l.get("opp_id") == "outro" for l in lines),
         "travel": travel_kinds, "travel_gap": travel_gap(), "catchphrases": n_catch, "speech_reactions": sum(1 for l in lines if "npc_" in (l.get("beat_kinds") or "")),
         "knowledge": bool(opts.get("knowledge")) and bool(__import__("app.knowledge", fromlist=["x"]).name_for_game(opts["game"]))}), vid))
     (work / "dropped.json").write_text(json.dumps(dropped, indent=2))
+    chs = viral.chapters(notes, length)
+    (work / "chapters.json").write_text(json.dumps({"chapters": chs, "text": viral.chapters_text(chs)}, indent=2))
     try:
         (work / "report.json").write_text(json.dumps(brain_report.build(
             notes, lines, dropped, all_beats, blocked, length, speech, cuts, travel_kinds), indent=2))

@@ -97,10 +97,17 @@ CANON = re.compile(r"\b(mary|eliza|isaac|dutch|hosea|john|abigail|jack|sadie|mic
                    r"pearson|strauss|sean|lenny|trelawny|kieran|susan|leopold|annabelle)\b", re.I)
 
 
+CLICKBAIT = re.compile(r"(you won'?t believe|shocking|mind[- ]?blow|never seen anything like|changed everything|nobody expected|"
+                       r"what happens next|gone wrong|you need to see|must[- ]watch|goes viral|jaw[- ]?dropping)", re.I)
+
+
 def content_reason(ln, text):
     """Rules about what a line may say, beyond when and where it may be."""
     if ln.get("opp_id") not in ("intro", "outro") and GREETING.search(text):
         return "greeting or subscribe line outside the intro and outro"
+    kinds0 = set((ln.get("beat_kinds") or "").split(","))
+    if kinds0 & {"hook", "cliffhanger"} and CLICKBAIT.search(text):
+        return "clickbait wording in a teaser"
     if ln.get("daydream") and CANON.search(text):
         return "daydream names a real character"
     kinds, emo = set((ln.get("beat_kinds") or "").split(",")), ln.get("emotion")
