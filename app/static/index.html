@@ -110,6 +110,7 @@
   <details class="keys" id="keysbox">
     <summary>API keys and models</summary>
     <p class="small">Saved to the private <code>.env</code> file on this Mac and used immediately. A saved key is never shown again, only its last four characters. Test makes one tiny real call.</p>
+    <div id="credits" class="small" role="status"></div>
     <div id="keys"></div>
   </details>
 
@@ -770,6 +771,11 @@ async function loadKeys() {
       <button class="s" data-keysave="${k.name}">Save</button><button class="s" data-keytest="${k.name}">Test</button>${k.secret && k.set ? `<button class="s danger" data-keyclear="${k.name}">Remove</button>` : ''}</div>
     <div class="res" id="res_${k.name}"></div></div>`).join('');
 }
+async function showCredits() {
+  try { const c = await api('credits'); const when = c.resets ? ' They reset on ' + new Date(c.resets * 1000).toLocaleString([], { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) + '.' : '';
+    $('credits').textContent = `ElevenLabs credits: ${c.remaining.toLocaleString()} of ${c.limit.toLocaleString()} characters left.` + when; $('credits').style.color = c.remaining < 1000 ? 'var(--bad)' : 'var(--mute)'; } catch (_) { $('credits').textContent = ''; }
+}
+showCredits();
 const keyBox = n => document.querySelector(`[data-keyinput="${n}"]`);
 const keyRes = (n, text, ok) => { const r = $('res_' + n); r.textContent = text; r.style.color = ok ? 'var(--ok)' : 'var(--bad)'; };
 document.addEventListener('click', async e => {

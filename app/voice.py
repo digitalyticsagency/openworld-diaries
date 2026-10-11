@@ -72,6 +72,41 @@ def _post(url, headers, body):
     raise last
 
 
+class OutOfCredits(RuntimeError):
+    """ElevenLabs refused because the monthly characters are used up (it answers 401 or 402 with quota_exceeded)."""
+
+
+CHECK_CREDITS = "OWD_DATA" not in os.environ      # the tests point the app at a temporary folder and must never reach the real account
+
+
+def credits():
+    """{used, limit, remaining, resets} for the ElevenLabs account, or None if it cannot be read."""
+    if not CHECK_CREDITS:
+        return None
+    try:
+        r = requests.get("https://api.elevenlabs.io/v1/user/subscription", headers={"xi-api-key": llm.key("ELEVENLABS_API_KEY")}, timeout=15)
+        if r.status_code != 200:
+            return None
+        d = r.json()
+        used, limit = int(d["character_count"]), int(d["character_limit"])
+        return {"used": used, "limit": limit, "remaining": max(0, limit - used), "resets": d.get("next_character_count_reset_unix")}
+    except (requests.exceptions.RequestException, KeyError, ValueError, TypeError, RuntimeError):
+        return None
+
+
+def credit_message(c=None):
+    import datetime
+    when = ""
+    if c and c.get("resets"):
+        when = " They reset on " + datetime.datetime.fromtimestamp(c["resets"]).strftime("%A %d %B at %H:%M") + "."
+    left = f" ({c['remaining']} of {c['limit']} characters left)" if c else ""
+    return ("The ElevenLabs credits are used up" + left + "." + when + " Add credits or wait for the reset, then press Voice and build again: "
+            "the lines are saved and every voice already made is kept.")
+
+
+MIN_CREDITS = 200            # fewer characters than this left: do not start a voicing run that cannot finish
+
+
 def with_breaths(text):
     """A short breath between the sentences of a story line, as a spoken-word tag the voice turns into a real pause (not after the last)."""
     return re.sub(r"(?<=[.!?])\s+(?=[A-Z\"'])", ' <break time="0.35s" /> ', text.strip())
@@ -87,6 +122,8 @@ def tts(text, voice_id, emotion, out, story=False, prev=None, nxt=None, delivery
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
     headers = {"xi-api-key": llm.key("ELEVENLABS_API_KEY")}
     r = _post(url, headers, body)
+    if r.status_code in (401, 402, 429) and "quota" in r.text.lower():
+        raise OutOfCredits(credit_message(credits()))
     if r.status_code == 422 and "seed" in r.text:       # a model that does not take a seed
         body.pop("seed")
         r = _post(url, headers, body)
@@ -196,6 +233,9 @@ def _neighbours(lines, n):
 
 def make_clips(lines, windows, system, work, pack=None, progress=None, character=None):
     """Render each line. Real audio length is re-checked against the speech windows."""
+    c = credits() if any(not (l.get("silent") or l.get("dropped")) for l in lines) else None
+    if c and c["remaining"] < MIN_CREDITS:                   # say so at once, not after a long wait and an unreadable 401
+        raise OutOfCredits(credit_message(c))
     cdir = Path(work) / "clips"
     cdir.mkdir(exist_ok=True)
     for stale in cdir.glob("c_*"):   # clips from an earlier run must never be mistaken for this one's

@@ -682,6 +682,14 @@ def local_only(request: Request):
         raise HTTPException(403, "Only the app's own page can change keys.")
 
 
+@app.get("/api/credits")
+def credits_left():
+    c = voice_mod.credits()
+    if not c:
+        raise HTTPException(502, "Could not read the ElevenLabs credits.")
+    return c
+
+
 @app.get("/api/keys")
 def keys_status():
     return envfile.status()

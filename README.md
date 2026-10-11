@@ -209,3 +209,6 @@ To give the player's words to the AI exactly, put an `.srt` or `.vtt` file with 
 ## Working on it in Google Antigravity
 
 Open this folder as a project. `AGENTS.md` describes the layout and the rules an agent must not break.
+
+## ElevenLabs credits
+The page shows the remaining ElevenLabs credits (`/api/credits`). Voicing checks them first and stops with a plain message when fewer than 200 characters are left, instead of a bare 401. Every voice already made is cached, so after the credits return press "Voice and build again" and only the missing lines are voiced.
