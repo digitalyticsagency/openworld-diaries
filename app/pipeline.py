@@ -46,14 +46,14 @@ def moral_mode():
     return "cues" if db.get("moral_mode", "both") == "cues" else "both"
 
 
-def travel_gap():
+def travel_gap(calm=None):
     """Seconds between thoughts in pure walking or riding: from the travel pace slider (thoughts a minute), else the default."""
     try:
         v = float(db.get("travel_lpm", "") or 0)
     except ValueError:
         v = 0
     gap = max(TRAVEL_GAP_MIN, 60.0 / v) if v > 0 else TRAVEL_GAP_DEFAULT
-    return max(gap, CALM_TRAVEL_GAP) if calm_active() else gap
+    return max(gap, CALM_TRAVEL_GAP) if (calm_active() if calm is None else calm) else gap
 
 
 def daydream_on():
@@ -179,6 +179,16 @@ CALM_TRAVEL_GAP = 55.0   # and thoughts on the road are at least this far apart
 
 def calm_on():
     return db.get("calm_mode", "0") == "1"
+
+
+CALM_MAX_MOMENTS_PER_MIN = 4.0     # a video with more real moments than this a minute is not a quiet wander: the calm pace is skipped
+
+
+def calm_fits(all_beats, length):
+    """(fits, moments a minute). The calm pace is for quiet videos: one with a lot happening (a dash, a chase, a busy town) would
+    be starved of commentary by it, so there the normal pace is used even when the switch is on."""
+    per_min = len([b for b in all_beats if not any(k.startswith("npc_") for k in b["kinds"])]) / max(length / 60.0, 0.5)
+    return per_min <= CALM_MAX_MOMENTS_PER_MIN, round(per_min, 1)
 
 
 def calm_active():
@@ -475,11 +485,13 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     arm, offset = evolve.choose_arm(explicit)
     eager = amt + evolve.density_bias(opts["pack"]) + offset
     learned = round(eager - amt - offset, 1)       # what the brain learned, before the calm pace caps it
-    if calm_active():
+    quiet_enough, per_min = calm_fits(all_beats, length)
+    calm_here = calm_active() and quiet_enough      # the calm pace only where little happens
+    if calm_here:
         eager = min(eager, CALM_EAGER)      # a calm free-roam video: only the strongest moments, long quiet stretches
     chosen, blocked, possible = plan_commentary(all_beats, free, cutscenes.subtract_ranges(speech, blocks), length,
                                                 eager, target_lpm(), cap_commentary(), extra=extra, quiet_fn=quiet_fn,
-                                                travel_gap=travel_gap())
+                                                travel_gap=travel_gap(calm_here))
     chosen_themes = thinking.for_video(v)
     travel_kinds = travel.assign(chosen, notes, channel.themes_for(opts["character"]),
                                  reflect=thinking.prompts(chosen_themes) or None, note=thinking.clean_note(v.get("theme_note")) if chosen_themes else "")
@@ -502,7 +514,8 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
         "beats": len(all_beats), "blocked_by_speech": len(blocked), "gaps": len(free),
         "micro_gaps": sum(1 for g in free if g["kind"] == "micro"), "planned": len(chosen),
         "lines": len(lines), "filled": filled, "eagerness": round(eager, 1), "arm": arm,
-        "slider": amt, "learned": learned, "calm": calm_active(), "calm_overridden": calm_on() and not calm_active(),
+        "slider": amt, "learned": learned, "calm": calm_here, "calm_overridden": calm_on() and not calm_active(), "moments_per_min": per_min,
+        "calm_skipped": (f"{per_min} moments a minute is too busy for the calm pace") if calm_active() and not quiet_enough else None,
         "silent": sum(1 for l in lines if l.get("silent")), "target_lpm": target_lpm(),
         "per_minute": round(len(lines) / (length / 60), 1), "possible_per_minute": possible,
         "cutscenes": len(cuts), "cutscene_seconds": cutscenes.total_seconds(cuts), "reactions": len(after),
@@ -510,7 +523,7 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
         "hook": any(l.get("opp_id") == "hook" for l in lines), "recap": any(l.get("opp_id") == "recap" for l in lines),
         "cliffhangers": sum(1 for l in lines if "cliffhanger" in (l.get("beat_kinds") or "")),
         "intro": any(l.get("opp_id") == "intro" for l in lines), "outro": any(l.get("opp_id") == "outro" for l in lines),
-        "travel": written_travel, "travel_planned": travel_kinds, "travel_gap": travel_gap(), "catchphrases": n_catch, "speech_reactions": sum(1 for l in lines if "npc_" in (l.get("beat_kinds") or "")),
+        "travel": written_travel, "travel_planned": travel_kinds, "travel_gap": travel_gap(calm_here), "catchphrases": n_catch, "speech_reactions": sum(1 for l in lines if "npc_" in (l.get("beat_kinds") or "")),
         "knowledge": bool(opts.get("knowledge")) and bool(__import__("app.knowledge", fromlist=["x"]).name_for_game(opts["game"]))}), vid))
     (work / "dropped.json").write_text(json.dumps(dropped, indent=2))
     chs = viral.chapters(notes, length)

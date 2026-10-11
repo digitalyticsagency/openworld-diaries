@@ -189,3 +189,64 @@ class StateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------- 4. the calm pace must not starve a busy video
+class CalmOnlyForQuietVideosTests(unittest.TestCase):
+    def beats_for(self, n, kind="big_animal"):
+        return [{"t": 10.0 * i, "salience": 6.3, "kinds": [kind], "why": "x"} for i in range(n)]
+
+    def test_quiet_videos_fit_the_calm_pace_and_busy_ones_do_not(self):
+        self.assertEqual(pipeline.calm_fits(self.beats_for(4), 300.0), (True, 0.8))
+        self.assertEqual(pipeline.calm_fits([], 300.0), (True, 0.0))
+        ok, per_min = pipeline.calm_fits(self.beats_for(18), 200.7)
+        self.assertFalse(ok)
+        self.assertAlmostEqual(per_min, 5.4, delta=0.1)
+        self.assertEqual(pipeline.calm_fits(self.beats_for(20), 300.0), (True, 4.0))          # exactly at the limit still counts as quiet
+
+    def test_what_people_said_does_not_make_a_video_busy(self):
+        talk = [{"t": 10.0 * i, "salience": 6.0, "kinds": ["npc_threat"], "why": "x"} for i in range(30)]
+        self.assertTrue(pipeline.calm_fits(talk, 300.0)[0])
+
+    def run_video(self, n_beats):
+        db.put("calm_mode", "1")
+        db.put("target_lpm", "")
+        notes = [frame(t, activity="travel") for t in range(0, 300, 3)]
+        for i in range(n_beats):
+            notes[i * 3] = frame(i * 9, interactions=[{"kind": "discovery", "object": "x", "outcome": "positive", "intensity": 3, "evidence": "e"}])
+        vid = db.run("INSERT INTO videos(drive_id,name,status,pack,game,created) VALUES(?,?,?,?,?,?)",
+                     (f"cq{time.time_ns()}", "x.mp4", "queued", "western", "Red Dead Redemption 2", time.time())).lastrowid
+        work = pipeline.workdir(vid)
+        work.mkdir(parents=True)
+        (work / "source.mp4").write_bytes(b"x")
+        (work / "scenes.json").write_text(json.dumps(notes))
+        (work / "transcript.json").write_text("[]")
+        with mock.patch("app.pipeline.scenes.video_length", return_value=300.0), \
+                mock.patch("app.pipeline.ensure_cuts", return_value=cutscenes.empty()), \
+                mock.patch("app.pipeline.sentiment.ensure", return_value=[]), \
+                mock.patch("app.pipeline.writer.write_lines", return_value=([], [])), \
+                mock.patch("app.pipeline.writer.fill_missed", side_effect=lambda *a, **k: (a[4], 0)), \
+                mock.patch("app.pipeline.evolve.refine", side_effect=lambda lines, *a, **k: lines), \
+                mock.patch("app.pipeline.voice.make_clips", side_effect=RuntimeError("stop here")):
+            pipeline.regenerate(vid, amt=10)
+        db.put("calm_mode", "0")
+        return json.loads(db.one("SELECT stats FROM videos WHERE id=?", (vid,))["stats"])
+
+    def test_a_busy_video_keeps_the_normal_pace_even_with_the_switch_on_and_says_so(self):
+        busy = self.run_video(30)
+        self.assertFalse(busy["calm"])
+        self.assertIn("too busy for the calm pace", busy["calm_skipped"])
+        self.assertGreater(busy["eagerness"], pipeline.CALM_EAGER)
+        self.assertGreater(busy["planned"], 6)
+
+    def test_a_quiet_video_still_gets_the_calm_pace(self):
+        quiet = self.run_video(2)
+        self.assertTrue(quiet["calm"])
+        self.assertIsNone(quiet["calm_skipped"])
+        self.assertEqual(quiet["eagerness"], pipeline.CALM_EAGER)
+
+    def test_the_page_explains_when_the_calm_pace_applies(self):
+        from app.config import ROOT
+        html = (ROOT / "app" / "static" / "index.html").read_text()
+        self.assertIn("a busier video, such as a dash or a chase, keeps the normal pace", html)
+        self.assertIn("calm pace skipped", html)

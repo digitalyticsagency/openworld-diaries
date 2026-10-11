@@ -100,7 +100,7 @@ Both apply to new videos and to Rebuild video.
 ## Free roam and the game's music
 For people who make a lot of free-roam videos.
 - **Free-roam styles** (8): the slow wanderer, the wildlife watcher, the scenic ride, the night rider, the lawless roamer, man and horse with no destination, GTA cruise the city, and one for any open-world game. They ask for fewer, longer thoughts and let the silence do the work. The general one never triggers the "this game normally uses another style" hint.
-- **Calm free-roam pace** (switch in Pacing): only the strongest moments get a line, and thoughts on the road are at least 55 seconds apart, whatever the sliders say.
+- **Calm free-roam pace** (switch in Pacing): only the strongest moments get a line, and thoughts on the road are at least 55 seconds apart, whatever the sliders say. It is for quiet videos only: a video with more than about 4 real moments a minute (a dash, a chase, a busy town) keeps the normal pace even with the switch on, and its stats say "calm pace skipped".
 - **Wandering goals:** a new travel thought that picks a small aim for the ride from something really in view ("head for the bridge", "one more ridge"). It needs a real landmark or detail in the scan, so without one it is skipped.
 - **Journey chapters and titles:** a travel chapter is named by when, the weather and where it can tell ("Night ride through Grizzlies West", "Snowy ride", "Dusk drive"). Packaging knows when a video is mostly a journey and builds its titles around the journey.
 - **The game's background music** (Sound, applies to new videos and Rebuild video):
