@@ -97,6 +97,19 @@ Under Voice settings, **Sound**:
 - **The game's own audio:** a slider from 100% (as recorded) down to 0% (removed), for any game.
 Both apply to new videos and to Rebuild video.
 
+## Free roam and the game's music
+For people who make a lot of free-roam videos.
+- **Free-roam styles** (8): the slow wanderer, the wildlife watcher, the scenic ride, the night rider, the lawless roamer, man and horse with no destination, GTA cruise the city, and one for any open-world game. They ask for fewer, longer thoughts and let the silence do the work. The general one never triggers the "this game normally uses another style" hint.
+- **Calm free-roam pace** (switch in Pacing): only the strongest moments get a line, and thoughts on the road are at least 55 seconds apart, whatever the sliders say.
+- **Wandering goals:** a new travel thought that picks a small aim for the ride from something really in view ("head for the bridge", "one more ridge"). It needs a real landmark or detail in the scan, so without one it is skipped.
+- **Journey chapters and titles:** a travel chapter is named by when, the weather and where it can tell ("Night ride through Grizzlies West", "Snowy ride", "Dusk drive"). Packaging knows when a video is mostly a journey and builds its titles around the journey.
+- **The game's background music** (Sound, applies to new videos and Rebuild video):
+  - *Keep it as it is.*
+  - *Lower the music:* levels the game audio and gently expands it downward so the steady bed falls while hooves, shots and voices keep their level. It is a filter, not source separation: it works best on soft, steady music.
+  - *Replace it with scene ambience* (Red Dead and GTA): the game audio is kept only where someone is speaking or a cutscene plays, and scene-matched beds play through the rest.
+  - *Replace it with my own music:* upload one track (at least 5 seconds). It is levelled, looped under the whole video, and dips under the voice. The game audio is again kept only for speech and cutscenes.
+  - When there is nothing to replace the music with (no ambience for the game, no track uploaded, or a bed that could not be made), the music is lowered instead and the Brain report says so. It is never left silent.
+
 ## Caption looks
 
 Dialogue subtitles and the inner voice each have their own style and position, chosen in Voice with a live preview on a frame of your own video.

@@ -52,7 +52,8 @@ def travel_gap():
         v = float(db.get("travel_lpm", "") or 0)
     except ValueError:
         v = 0
-    return max(TRAVEL_GAP_MIN, 60.0 / v) if v > 0 else TRAVEL_GAP_DEFAULT
+    gap = max(TRAVEL_GAP_MIN, 60.0 / v) if v > 0 else TRAVEL_GAP_DEFAULT
+    return max(gap, CALM_TRAVEL_GAP) if calm_on() else gap
 
 
 def daydream_on():
@@ -168,6 +169,14 @@ def plan_commentary(all_beats, free, windows, length, eager, target, silent_on, 
     return chosen, blocked, round(len(most) / (length / 60.0), 1)
 
 
+CALM_EAGER = 3.0         # the calm free-roam pace never goes above this eagerness
+CALM_TRAVEL_GAP = 55.0   # and thoughts on the road are at least this far apart
+
+
+def calm_on():
+    return db.get("calm_mode", "0") == "1"
+
+
 def ambience_on():
     return db.get("ambience_on", "0") == "1"
 
@@ -178,6 +187,61 @@ def game_audio_level():
         return max(0.0, min(1.0, int(float(db.get("game_audio", "100"))) / 100.0))
     except ValueError:
         return 1.0
+
+
+MUSIC_MODES = ("keep", "lower", "ambience", "own")
+
+
+def music_mode():
+    """What happens to the game's background music: keep it, lower it, replace it with ambience, or with the owner's own music."""
+    v = db.get("music_mode", "keep")
+    return v if v in MUSIC_MODES else "keep"
+
+
+def own_music_path():
+    d = DATA / "music"
+    return next(iter(sorted(d.glob("own.*"))), None) if d.exists() else None
+
+
+def _audio_plan(vid, segs, blocks):
+    """(beds, only_in, lower_music) for the mix, from the music mode.
+    keep: as recorded (plus the opt-in quiet beds). lower: the game audio with its music pushed down. ambience / own: the
+    game audio is kept only where someone speaks (in-game speech, cutscenes) and the music is replaced by scene-matched
+    ambience or by the owner's own track. If there is nothing to replace it with (no ambience for this game, no track
+    uploaded), it falls back to lowering the music, never to silence."""
+    mode = music_mode()
+    if mode in ("keep", "lower"):
+        return (_ambience(vid, segs, blocks) if ambience_on() else []), None, mode == "lower"
+    work = workdir(vid)
+    note = {"on": True, "mode": mode, "segments": [], "error": None, "fallback": None}
+    beds = []
+    try:
+        v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
+        length = scenes.video_length(work / "source.mp4")
+        keep = cutscenes.merge([list(w) for w in guard.speech_windows(segs)] + [list(b) for b in (blocks or [])])
+        if mode == "own":
+            f = own_music_path()
+            if f:
+                beds = [(0.0, length, f)]
+                note["segments"] = [{"start": 0.0, "end": round(length, 2), "bed": "your own music"}]
+        else:
+            fam = ambience.family_for(video_opts(v)["game"])
+            if fam:
+                notes, _ = _load(vid)
+                plan = ambience.plan(notes, length, keep, fam, quiet_only=False)
+                beds = ambience.prepare(plan, fam, DATA / "ambience")
+                note["segments"] = plan
+    except Exception as e:
+        traceback.print_exc()
+        note["error"] = f"{type(e).__name__}: {e}"[:300]
+        beds = []
+    if not beds:
+        note["fallback"] = "lowered the game's music instead: " + ("no ambience for this game" if mode == "ambience" else "no music file uploaded") \
+            if not note["error"] else "lowered the game's music instead"
+    (work / "ambience.json").write_text(json.dumps(note, indent=2))
+    if not beds:
+        return [], None, True
+    return beds, keep, False
 
 
 def _ambience(vid, segs, blocks):
@@ -207,7 +271,8 @@ def _finish(vid, lines, clips, segs, src, blocks=None):
     """Mix the voice into the game audio, then burn the captions on top."""
     work = workdir(vid)
     mixed = work / "mixed.mp4"
-    voice.mix(src, clips, mixed, ambience=_ambience(vid, segs, blocks), game_level=game_audio_level())
+    amb, only_in, lower = _audio_plan(vid, segs, blocks)
+    voice.mix(src, clips, mixed, ambience=amb, game_level=game_audio_level(), only_in=only_in, lower_music=lower)
     set_status(vid, "captioning")
     secs = {round(s, 2): d for s, _, d in clips}
     com = captions.commentary_items(lines, secs) if cap_commentary() else []
@@ -400,6 +465,8 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     quiet_fn = beats.travel_quiet_fn(notes) if daydream_on() else (lambda t: False)
     arm, offset = evolve.choose_arm(explicit)
     eager = amt + evolve.density_bias(opts["pack"]) + offset
+    if calm_on():
+        eager = min(eager, CALM_EAGER)      # a calm free-roam video: only the strongest moments, long quiet stretches
     chosen, blocked, possible = plan_commentary(all_beats, free, cutscenes.subtract_ranges(speech, blocks), length,
                                                 eager, target_lpm(), cap_commentary(), extra=extra, quiet_fn=quiet_fn,
                                                 travel_gap=travel_gap())

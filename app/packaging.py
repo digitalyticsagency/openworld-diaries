@@ -24,8 +24,11 @@ def _mmss(t):
 
 def facts(game, pack_name, length, notes, beats, chapters, lines, episode=None, series=""):
     """The fact sheet: only things the scan and the saved lines really contain."""
-    seen_animals, places, acts = {}, {}, {}
+    seen_animals, places, acts, skies = {}, {}, {}, {}
     for n in notes:
+        for w in ("dawn", "dusk", "night", "snow", "rain", "fog", "storm"):
+            if w in str(n.get("time_weather") or "").lower():
+                skies[w] = skies.get(w, 0) + 1
         for a in n.get("animals") or []:
             sp = (a.get("species") or "").strip().lower()
             if sp and sp != "none":
@@ -44,6 +47,8 @@ def facts(game, pack_name, length, notes, beats, chapters, lines, episode=None, 
             "animals_seen": sorted(seen_animals, key=lambda k: -seen_animals[k])[:6],
             "places_seen": sorted(places, key=lambda k: -places[k])[:4],
             "activities": sorted(acts, key=lambda k: -acts[k])[:5],
+            "time_and_weather_seen": sorted(skies, key=lambda k: -skies[k])[:4],
+            "free_roam": bool(notes) and (acts.get("travel", 0) + acts.get("other", 0)) / len(notes) >= 0.6,
             "moral_choices": sum(1 for n in notes if n.get("moral_events")),
             "sample_lines": [l["line"] for l in sorted(spoken, key=lambda l: l["start"])]}
 

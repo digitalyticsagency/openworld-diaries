@@ -1,4 +1,4 @@
-"""The genre packs (10 general ones, 10 for Red Dead Redemption 2 and 10 for Grand Theft Auto) and the personality layer that sits on top of them.
+"""The genre packs (10 general ones, 10 for Red Dead Redemption 2, 10 for Grand Theft Auto and 8 for free roam) and the personality layer that sits on top of them.
 
 A pack carries the vocabulary, what to react to, the tone, and default voices for a kind of game.
 A personality changes the attitude. Neither can override the hard guardrails.
@@ -110,11 +110,13 @@ PACKS = {
     },
 }
 
+from .freeroam_packs import FREEROAM_PACKS  # noqa: E402
 from .gta_packs import GTA_PACKS  # noqa: E402
 from .rdr2_packs import RDR2_PACKS  # noqa: E402
 
 PACKS.update(RDR2_PACKS)
 PACKS.update(GTA_PACKS)
+PACKS.update(FREEROAM_PACKS)
 
 PERSONALITIES = {
     "balanced": ("Balanced", "Follow the genre pack's own tone with no extra twist."),
@@ -153,6 +155,8 @@ def same_family(a, b):
     """True when two packs are the same kind of game (the Red Dead styles all belong with Western outlaw)."""
     fa = PACKS.get(a, {}).get("family", a)
     fb = PACKS.get(b, {}).get("family", b)
+    if "any" in (fa, fb):           # a style that fits any game never triggers the "wrong style" hint
+        return bool(a) and bool(b)
     return bool(a) and bool(b) and fa == fb
 
 

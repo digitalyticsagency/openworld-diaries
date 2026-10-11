@@ -11,8 +11,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from . import analytics, captions, comments, trends, cutscenes, db, envfile, evolve, google_auth, knowledge, pipeline, series, sources, styles, voices
+from . import ambience, analytics, captions, comments, trends, cutscenes, db, envfile, evolve, google_auth, knowledge, pipeline, series, sources, styles, voices
 from . import channel as channel_lines
+from . import voice as voice_mod
 from .config import POLL_SECONDS
 
 STATIC = Path(__file__).parent / "static"
@@ -125,6 +126,8 @@ class Settings(BaseModel):
     hook_on: bool | None = None
     series_on: bool | None = None
     ambience_on: bool | None = None
+    music_mode: str | None = None
+    calm_mode: bool | None = None
     game_audio: int | None = None
     series_name: str | None = None
     cliff_on: bool | None = None
@@ -225,6 +228,8 @@ def state():
         "cutscene_quiet": pipeline.cutscene_quiet(),
         "one_voice": pipeline.one_voice(),
         "daydream": pipeline.daydream_on(),
+        "music_mode": pipeline.music_mode(), "own_music": (pipeline.own_music_path().name if pipeline.own_music_path() else None),
+        "calm_mode": pipeline.calm_on(),
         "ambience_on": pipeline.ambience_on(), "game_audio": int(round(pipeline.game_audio_level() * 100)),
         "series_on": series.enabled(), "series_name": series.name(),
         "moral_mode": pipeline.moral_mode(),
@@ -295,6 +300,47 @@ def analyze():
     return {"started": len(ids)}
 
 
+MUSIC_EXT = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
+
+
+@app.post("/api/music")
+async def upload_music(request: Request, name: str):
+    """The owner's own background music (one file, replaced each time), brought to a quiet level and kept for every video."""
+    ext = Path(name).suffix.lower()
+    if ext not in MUSIC_EXT:
+        raise HTTPException(400, "Use an audio file: .mp3 .wav .m4a .aac .ogg .flac")
+    d = pipeline.DATA / "music"
+    d.mkdir(parents=True, exist_ok=True)
+    tmp = d / f".upload{ext}"
+    try:
+        with open(tmp, "wb") as f:
+            async for chunk in request.stream():
+                await asyncio.to_thread(f.write, chunk)
+        if tmp.stat().st_size < 1000:
+            raise HTTPException(400, "That file is empty.")
+        try:
+            seconds = voice_mod.duration(tmp)
+        except Exception:
+            raise HTTPException(400, "That does not look like an audio file.")
+        if seconds < 5:
+            raise HTTPException(400, "Use a track of at least 5 seconds; it is looped under the video.")
+        for old in d.glob("own.*"):
+            old.unlink()
+        dest = d / f"own{ext}"
+        tmp.replace(dest)
+        await asyncio.to_thread(ambience._level, dest, ambience.MUSIC_TARGET_DB)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return {"saved": dest.name, "seconds": round(seconds, 1)}
+
+
+@app.delete("/api/music")
+def remove_music():
+    for old in (pipeline.DATA / "music").glob("own.*"):
+        old.unlink()
+    return {"ok": True}
+
+
 @app.post("/api/upload")
 async def upload(request: Request, name: str):
     """Raw-body upload from the browser. Saved into the inbox, then picked up like any file."""
@@ -328,8 +374,11 @@ def settings(s: Settings):
         elif k == "personality":
             v = styles.personality_id(v)
         elif k in ("youtube_publish", "learn", "ask_style", "ab_test", "cap_commentary", "cap_dialogue", "cutscene_quiet", "one_voice",
-                    "daydream", "intro_on", "outro_on", "catch_on", "knowledge_on", "hook_on", "cliff_on", "series_on", "ambience_on"):
+                    "daydream", "intro_on", "outro_on", "catch_on", "knowledge_on", "hook_on", "cliff_on", "series_on", "ambience_on", "calm_mode"):
             v = "1" if v else "0"
+        elif k == "music_mode":
+            if v not in pipeline.MUSIC_MODES:
+                raise HTTPException(400, "music_mode must be keep, lower, ambience or own.")
         elif k == "game_audio":
             v = max(0, min(100, v))
         elif k == "amount":

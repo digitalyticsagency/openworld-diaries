@@ -1,6 +1,7 @@
 """Travel thoughts: what a person thinks while just walking or riding. Five kinds, rotated so no two in a row match.
 
   notice   something actually seen nearby (a landmark, an animal, the weather)
+  goal     a small aim for the ride picked from something really in view ("maybe the river", "one more ridge")
   mood     how the trip feels, worked out by code from the hour, the weather, how long it has been and what just happened
   horse    a short warm thought about the horse, only while riding
   memory   something that happened earlier in this same video
@@ -9,7 +10,7 @@
 The facts come only from the scan, so a thought can never invent one. Pure functions, no network."""
 from .channel import THEMES
 
-ORDER = ["notice", "mood", "horse", "memory", "wistful"]
+ORDER = ["notice", "goal", "mood", "horse", "memory", "wistful"]
 NEAR = 7.0            # a notice or horse fact must be within this many seconds of the thought
 RECENT = 90.0         # events this recent colour the mood
 MEMORY_MIN_AGE = 45.0
@@ -119,12 +120,16 @@ def assign(chosen, scenes, themes=None):
         t = o["t"]
         facts, horse = notice_facts(scenes, t), horse_facts(scenes, t)
         mem = memory_event(scenes, t, used_mem)
-        ready = {"notice": bool(facts), "mood": True, "horse": bool(horse), "memory": bool(mem), "wistful": True}
+        ready = {"notice": bool(facts), "goal": bool(facts), "mood": True, "horse": bool(horse), "memory": bool(mem), "wistful": True}
         start = (ORDER.index(last) + 1) % len(ORDER) if last else 0
         kind = next(ORDER[(start + k) % len(ORDER)] for k in range(len(ORDER)) if ready[ORDER[(start + k) % len(ORDER)]])
         if kind == "notice":
             why = ("Quiet travel. Notice something that is really there and let it become a small private thought. "
                    "What the scan saw: " + "; ".join(facts) + ". Mention only these.")
+        elif kind == "goal":
+            why = ("Quiet travel. Let him pick a small goal for the ride from something really in view, or decide to stop and rest: "
+                   "head for it, climb it, follow it, or just see what is beyond it. What the scan saw: " + "; ".join(facts)
+                   + ". Choose only from these, and promise nothing that needs a fact not listed.")
         elif kind == "mood":
             mood, why_m = mood_for(scenes, t)
             why = (f"Quiet travel. Let the way the trip feels show: he feels {mood}" + (f" ({'; '.join(why_m)})" if why_m else "")

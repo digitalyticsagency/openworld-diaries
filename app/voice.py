@@ -145,13 +145,29 @@ def make_clips(lines, windows, system, work, pack=None, progress=None, character
     return clips
 
 
-def mix(video, clips, out, ambience=(), game_level=1.0):
+def _keep_only(windows):
+    """ffmpeg `enable` expression that is true everywhere except inside the windows, so a volume filter switched on by it
+    silences the game audio outside them (the windows keep the game's own speech and cutscenes)."""
+    if not windows:
+        return "1"
+    return "1-(" + "+".join(f"between(t,{max(0.0, a - 0.08):.2f},{b + 0.08:.2f})" for a, b in windows) + ")"
+
+
+# The music lowerer: level the game audio, then gently expand it downward so the steady quiet bed (music) falls and the louder
+# sounds (hooves, shots, voices) keep their level. A heuristic, not source separation: it helps most with soft, steady music.
+LOWER_FILTER = "loudnorm=I=-23:TP=-2:LRA=11,compand=attacks=0.02:decays=0.35:points=-90/-120|-38/-62|-22/-24|-8/-8|0/0:soft-knee=6"
+
+
+def mix(video, clips, out, ambience=(), game_level=1.0, only_in=None, lower_music=False):
     """Game audio plus voice. The audio always runs the whole length of the video: the voice track is padded
     to full length and the result follows the game audio, so it can never stop when the last line ends.
     ambience: [(start, end, file)] quiet beds laid under the game audio, each looped and faded in and out.
-    game_level: how loud the game's own audio is (1.0 as it is, 0.0 silent)."""
+    game_level: how loud the game's own audio is (1.0 as it is, 0.0 silent).
+    only_in: [(start, end)] windows where the game audio is kept and silent everywhere else (in-game speech and cutscenes
+    stay; the music and everything else go). None keeps it everywhere.
+    lower_music: run the music lowerer over the game audio first."""
     ambience = list(ambience)
-    if not clips and not ambience and game_level == 1.0:
+    if not clips and not ambience and game_level == 1.0 and only_in is None and not lower_music:
         subprocess.run(["ffmpeg", "-y", "-i", str(video), "-c", "copy", str(out)],
                        check=True, capture_output=True)
         return
@@ -162,7 +178,9 @@ def mix(video, clips, out, ambience=(), game_level=1.0):
         inputs += ["-i", str(p)]
     for _, _, p in ambience:
         inputs += ["-stream_loop", "-1", "-i", str(p)]
-    f = [f"[0:a]volume={game_level:.3f}[game0]" if game_level != 1.0 else "[0:a]anull[game0]"]
+    chain = ([LOWER_FILTER] if lower_music else []) + ([f"volume=0:enable='{_keep_only(only_in)}'"] if only_in is not None else []) \
+        + ([f"volume={game_level:.3f}"] if game_level != 1.0 else [])
+    f = [f"[0:a]{','.join(chain) or 'anull'}[game0]"]
     f += [f"[{i}:a]adelay={int(s * 1000)}|{int(s * 1000)}[v{i}]" for i, (s, _) in enumerate(clips, 1)]
     base = len(clips) + 1
     for k, (a, b, _) in enumerate(ambience):

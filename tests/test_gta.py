@@ -24,7 +24,7 @@ class GtaStyleTests(unittest.TestCase):
             self.assertTrue(p["hints"] and p["games"], k)
             self.assertNotEqual(p["voices"]["character"], p["voices"]["companion"], k)
         self.assertEqual(len({p["name"] for p in gta.values()}), 10)
-        self.assertEqual(len(styles.PACKS), 30)
+        self.assertEqual(len(styles.PACKS), 38)
 
     def test_a_gta_style_belongs_with_the_crime_family_and_not_with_western(self):
         self.assertTrue(styles.same_family("gta_chase", "crime"))

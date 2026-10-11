@@ -127,18 +127,55 @@ def _label(n):
     return None          # menus and unknowns do not make a chapter
 
 
+JOURNEY_VERB = {"Riding": "ride", "Driving": "drive", "Exploring on foot": "walk"}
+WEATHER_WORD = (("snow", "Snowy"), ("blizzard", "Snowy"), ("rain", "Rainy"), ("storm", "Stormy"), ("fog", "Foggy"), ("mist", "Misty"))
+TOD_WORD = (("dawn", "Dawn"), ("dusk", "Dusk"), ("night", "Night"))
+
+
+def _common(words, texts):
+    """The word (from the ordered list) that most of the texts contain, if more than a third do."""
+    best, top = None, 0
+    for key, word in words:
+        n = sum(1 for t in texts if key in t)
+        if n > top:
+            best, top = word, n
+    return best if top * 3 > len(texts) else None
+
+
+def journey_title(title, notes):
+    """A journey chapter named by when, in what weather and where: "Night ride through Grizzlies West". Other chapters, and
+    any journey the scan says nothing about, keep their plain name."""
+    verb = JOURNEY_VERB.get(title)
+    if not verb or not notes:
+        return title
+    sky = [str(n.get("time_weather") or "").lower() for n in notes]
+    lead = _common(WEATHER_WORD, sky) or _common(TOD_WORD, sky)
+    places = {}
+    for n in notes:
+        loc = str(n.get("location") or "").strip()
+        if loc and loc.lower() != "unknown" and len(loc) <= 28:
+            places[loc] = places.get(loc, 0) + 1
+    where = max(places, key=places.get) if places and max(places.values()) * 3 > len(notes) else None
+    if not lead and not where:
+        return title
+    return (f"{lead} {verb}" if lead else title) + (f" through {where}" if where else "")
+
+
 def chapters(scenes, length):
     """[{t, title}] from the activity runs, for the YouTube description. Empty when there are fewer than three real chapters
     (YouTube needs three), and the first always starts at 0:00."""
-    frames = [(n["t"], _label(n)) for n in sorted(scenes, key=lambda n: n["t"])]
-    frames = [(t, lab) for t, lab in frames if lab]
+    frames = [(n["t"], _label(n), n) for n in sorted(scenes, key=lambda n: n["t"])]
+    frames = [(t, lab, n) for t, lab, n in frames if lab]
     if not frames:
         return []
-    runs = []                                       # [start, title]
-    for t, lab in frames:
+    runs = []                                       # [start, title, the scan notes in the run]
+    for t, lab, n in frames:
         if not runs or runs[-1][1] != lab:
-            runs.append([t, lab])
-    sized = [(start, title, (runs[i + 1][0] if i + 1 < len(runs) else length) - start) for i, (start, title) in enumerate(runs)]
+            runs.append([t, lab, []])
+        runs[-1][2].append(n)
+    for r in runs:
+        r[1] = journey_title(r[1], r[2])
+    sized = [(start, title, (runs[i + 1][0] if i + 1 < len(runs) else length) - start) for i, (start, title, _) in enumerate(runs)]
     keep = [r for i, r in enumerate(sized) if i == 0 or r[2] >= CHAPTER_MIN]      # a short blip stays inside the chapter before it
     if len(keep) > CHAPTER_MAX:                     # too many: the longest ones are the real chapters
         longest = {id(r) for r in sorted(keep[1:], key=lambda r: -r[2])[:CHAPTER_MAX - 1]}

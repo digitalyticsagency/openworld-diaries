@@ -9,6 +9,7 @@ from . import knowledge, voice
 
 BED_SECONDS = 22.0              # the longest sound effect the service makes in one go
 TARGET_DB = -34.0               # a bed is brought to about this average level: far below the game audio
+MUSIC_TARGET_DB = -26.0         # the owner's own track sits a little higher: it replaces the game's music
 MIN_SEGMENT = 8.0               # a bed shorter than this is not worth starting
 SPEECH_MARGIN = 0.6
 FADE = 1.5
@@ -116,9 +117,10 @@ def _minus(a, b, ranges):
     return pieces
 
 
-def plan(notes, length, windows, family):
-    """[{start, end, bed}]: where a bed plays. Only in calm moments, never in speech or a cutscene, each at least
-    MIN_SEGMENT long."""
+def plan(notes, length, windows, family, quiet_only=True):
+    """[{start, end, bed}]: where a bed plays. By default only in calm moments, never in speech or a cutscene, each at least
+    MIN_SEGMENT long. With quiet_only False (ambience replaces the game audio) it plays through action too, still never
+    over speech or a cutscene."""
     if not family or not notes:
         return []
     notes = sorted(notes, key=lambda n: n["t"])
@@ -126,8 +128,8 @@ def plan(notes, length, windows, family):
     for i, n in enumerate(notes):
         lo = (notes[i - 1]["t"] + n["t"]) / 2 if i else max(0.0, n["t"] - 1.5)
         hi = (n["t"] + notes[i + 1]["t"]) / 2 if i + 1 < len(notes) else min(length, n["t"] + 1.5)
-        bed = bed_for(n, family) if calm(n) else None
-        if not calm(n):
+        bed = bed_for(n, family) if (calm(n) or not quiet_only) else None
+        if not calm(n) and quiet_only:
             busy.append([lo, hi])           # a fight or a chase keeps its own sound, with a little room either side
         if bed:
             if spans and spans[-1]["bed"] == bed and lo - spans[-1]["end"] <= 0.5:
