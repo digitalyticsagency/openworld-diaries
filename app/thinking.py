@@ -66,8 +66,10 @@ MAX_NOTE = 200
 
 
 def clean_ids(ids):
-    """The chosen theme ids that exist, in the catalogue's order, without repeats. Anything else is dropped."""
-    got = {i for i in (ids or []) if isinstance(i, str)}
+    """The chosen theme ids that exist, in the catalogue's order, without repeats. Anything else is dropped; "all" means every theme."""
+    got = {i for i in (ids if isinstance(ids, (list, tuple, set)) else []) if isinstance(i, str)}
+    if "all" in got:                 # the "mix of everything" shortcut
+        return list(THEMES)
     return [k for k in THEMES if k in got]
 
 

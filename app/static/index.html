@@ -362,12 +362,14 @@ function thinkingBoxInner(v) {
   let mine = []; try { mine = JSON.parse(v.themes || '[]'); } catch (_) {}
   const r = REGEN[v.id] || {}, chosen = r.themes ?? mine, note = r.theme_note ?? v.theme_note ?? '';
   return `<div class="themes" style="display:grid;gap:3px;margin:6px 0;max-width:340px">${CAT.themes.map(t => `<label class="rad"><input type="checkbox" data-regth="${v.id}:${t.id}" ${chosen.includes(t.id) ? 'checked' : ''}> <span>${esc(t.name)}</span></label>`).join('')}</div>
+    <div class="acts"><button type="button" class="s" data-allth="regth:${v.id}">Mix of everything</button><button type="button" class="s" data-noneth="regth:${v.id}">Clear</button></div>
     <input data-regsel="${v.id}:theme_note" value="${esc(note)}" maxlength="200" placeholder="or in your own words" aria-label="What he is thinking about, in your own words">`;
 }
 function thinkingBox(id, chosen, note, boxAttr, noteAttr) {
   return `<details class="thinking"${chosen.length || note ? ' open' : ''}><summary>What is he thinking about on quiet travel? (optional)</summary>
     <div class="small">Pick as many as you like. Only the quiet thoughts while riding or walking follow this; reactions to fights, shops and animals stay about what happens.</div>
     <div class="themes" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:4px 14px;margin:6px 0">${CAT.themes.map(t => `<label class="rad"><input type="checkbox" data-${boxAttr}="${id}:${t.id}" ${chosen.includes(t.id) ? 'checked' : ''}> <span>${esc(t.name)}</span></label>`).join('')}</div>
+    <div class="acts"><button type="button" class="s" data-allth="${boxAttr}:${id}">Mix of everything</button><button type="button" class="s" data-noneth="${boxAttr}:${id}">Clear</button></div>
     <label>Or in your own words (a feeling, never a fact)</label><input data-${noteAttr}="${id}:theme_note" value="${esc(note)}" maxlength="200" placeholder="for example: missing his brother, wondering about a quiet life">
   </details>`;
 }
@@ -691,6 +693,10 @@ document.addEventListener('click', async e => {
     if (d.repskip) { await api(`replies/${d.repskip}/skip`, {}); for (const id of MOPEN) showComments(id); }
     if (d.clips) { const id = +d.clips; COPEN.has(id) ? COPEN.delete(id) : COPEN.add(id); if (COPEN.has(id)) showClips(id); else $('k'+id).innerHTML=''; }
     if (d.mkclips) { try { await api(`videos/${d.mkclips}/clips`, {}); say('Cutting the clips. This takes a few minutes.'); COPEN.add(+d.mkclips); await refresh(); } catch (e) { say(e.message, true); } }
+    if (d.allth || d.noneth) { const [kind, id] = (d.allth || d.noneth).split(':'), all = !!d.allth, ids = all ? CAT.themes.map(t => t.id) : [];
+      document.querySelectorAll(`input[data-${kind}^="${id}:"]`).forEach(b => { b.checked = all; });
+      if (kind === 'chth') (CHOOSE[id] ||= {}).themes = ids; else (REGEN[id] ||= {}).themes = ids;
+      say(all ? 'Every theme is ticked: the thoughts will mix through all of them.' : 'Cleared: the normal thoughts.'); }
     if (d.copy) { try { await navigator.clipboard.writeText(decodeURIComponent(d.copy)); say('Copied.'); } catch (_) { say('Copy failed. Select the text and copy it by hand.', true); } }
     if (d.pack) { const id = +d.pack; POPEN.has(id) ? POPEN.delete(id) : POPEN.add(id); if (POPEN.has(id)) showPackaging(id); else $('p'+id).innerHTML=''; }
     if (d.mkpack) { say('Writing the packaging and drawing the thumbnails...'); try { await api(`videos/${d.mkpack}/packaging`, {}); say('Packaging ready.'); } catch (e) { say(e.message, true); } POPEN.add(+d.mkpack); showPackaging(+d.mkpack); }

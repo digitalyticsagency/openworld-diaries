@@ -34,6 +34,12 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(thinking.clean_ids(None), [])
         self.assertEqual(thinking.clean_ids("family"), [])
 
+    def test_the_mix_of_everything_shortcut_means_every_theme(self):
+        self.assertEqual(thinking.clean_ids(["all"]), list(thinking.THEMES))
+        self.assertEqual(thinking.clean_ids(["family", "all", "nonsense"]), list(thinking.THEMES))
+        self.assertEqual(len(thinking.prompts(["all"])), 8 * 6)
+        self.assertEqual([lab for lab, _ in thinking.prompts(["all"])[:8]], [t["name"] for t in thinking.THEMES.values()])
+
     def test_the_note_is_one_short_plain_line(self):
         self.assertEqual(thinking.clean_note("  missing   his\nbrother <b>{x}</b> \\ "), "missing his brother bx/b")
         self.assertEqual(len(thinking.clean_note("x" * 500)), thinking.MAX_NOTE)
@@ -118,6 +124,11 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(json.loads(self.row(v)["themes"]), [])
         self.assertIsNone(self.row(v)["theme_note"])
 
+    def test_all_is_stored_as_every_theme(self):
+        v = self.vid()
+        pipeline.start(v, "western", "balanced", "RDR2", themes=["all"])
+        self.assertEqual(json.loads(self.row(v)["themes"]), list(thinking.THEMES))
+
     def test_the_choice_belongs_to_one_video(self):
         a, b = self.vid(), self.vid()
         pipeline.start(a, "western", "balanced", "RDR2", themes=["work"])
@@ -182,7 +193,7 @@ class PageTests(unittest.TestCase):
     def test_the_page_offers_the_choice_at_upload_and_after(self):
         from app.config import ROOT
         html = (ROOT / "app" / "static" / "index.html").read_text()
-        for needle in ("What is he thinking about on quiet travel?", "thinkingBox(v.id, c.themes || [], c.theme_note || '', 'chth', 'ch')", "data-regth", "Thinking about…", "theme_note", "Or in your own words"):
+        for needle in ("What is he thinking about on quiet travel?", "thinkingBox(v.id, c.themes || [], c.theme_note || '', 'chth', 'ch')", "data-regth", "Thinking about…", "theme_note", "Or in your own words", "Mix of everything", "data-allth", "data-noneth"):
             self.assertIn(needle, html)
 
 
