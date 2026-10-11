@@ -30,6 +30,11 @@ CREATE TABLE IF NOT EXISTS memory (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   kind TEXT, text TEXT UNIQUE, count INTEGER DEFAULT 1, updated REAL
 );
+CREATE TABLE IF NOT EXISTS replies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  video_id INTEGER, comment_id TEXT UNIQUE, author TEXT, comment TEXT,
+  draft TEXT, status TEXT, note TEXT, created REAL
+);
 CREATE TABLE IF NOT EXISTS metrics (
   video_id INTEGER PRIMARY KEY, views INTEGER, likes INTEGER,
   avg_view_pct REAL, fetched REAL
@@ -69,7 +74,8 @@ MIGRATIONS = [("videos", "cutscenes", "TEXT"), ("lines", "note", "TEXT"), ("line
               ("videos", "status_at", "REAL"), ("videos", "started_at", "REAL"), ("videos", "progress", "TEXT"),
               ("videos", "pack", "TEXT"), ("videos", "personality", "TEXT"), ("videos", "game", "TEXT"),
               ("videos", "suggestion", "TEXT"), ("lines", "max_duration", "REAL"), ("lines", "dropped", "INTEGER DEFAULT 0"),
-              ("lines", "trigger_t", "REAL"), ("lines", "callback_t", "REAL")]
+              ("lines", "trigger_t", "REAL"), ("lines", "callback_t", "REAL"),
+              ("videos", "episode", "INTEGER"), ("videos", "summary", "TEXT")]
 
 
 def init():

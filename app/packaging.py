@@ -22,7 +22,7 @@ def _mmss(t):
     return f"{t // 60}:{t % 60:02d}"
 
 
-def facts(game, pack_name, length, notes, beats, chapters, lines):
+def facts(game, pack_name, length, notes, beats, chapters, lines, episode=None, series=""):
     """The fact sheet: only things the scan and the saved lines really contain."""
     seen_animals, places, acts = {}, {}, {}
     for n in notes:
@@ -38,7 +38,7 @@ def facts(game, pack_name, length, notes, beats, chapters, lines):
     top = sorted((b for b in beats if not any(k.startswith("npc_") for k in b["kinds"])), key=lambda b: -b["salience"])[:8]
     top.sort(key=lambda b: b["t"])
     spoken = sorted((l for l in lines if not l.get("silent") and not l.get("dropped")), key=lambda l: -(l.get("salience") or 0))[:8]
-    return {"game": game, "style": pack_name, "length": _mmss(length),
+    return {"game": game, "style": pack_name, "length": _mmss(length), "episode": episode, "series": series,
             "chapters": [f"{_mmss(c['t'])} {c['title']}" for c in chapters],
             "moments": [{"i": i, "at": _mmss(b["t"]), "t": b["t"], "salience": b["salience"], "what": b["why"]} for i, b in enumerate(top)],
             "animals_seen": sorted(seen_animals, key=lambda k: -seen_animals[k])[:6],
@@ -105,6 +105,9 @@ def validate(raw, fs):
     mi = raw.get("thumb_moment")
     if not isinstance(mi, int) or not 0 <= mi < len(fs["moments"]):
         mi = max(range(len(fs["moments"])), key=lambda i: fs["moments"][i]["salience"]) if fs["moments"] else None
+    if fs.get("episode"):                      # a series: every title carries the episode number
+        from .series import title_prefix
+        titles = [title_prefix(t, fs["episode"], fs.get("series", "")) for t in titles]
     return {"titles": titles[:TITLES], "description": body, "tags": _clean_tags(raw.get("tags"), fs["game"]),
             "pinned_comment": pin, "thumb_texts": thumbs[:3], "thumb_moment": mi}
 

@@ -9,7 +9,7 @@ from . import (beats, captions, channel, cutscenes, db, detect, evolve, gaps, gu
                sources, styles, transcript, travel, voice, writer)
 from . import report as brain_report
 from . import clips as clipmod
-from . import packaging, thumbnail, viral
+from . import packaging, series, thumbnail, viral
 from .config import DATA, MIN_GAP_FLOOR, TRAVEL_GAP_DEFAULT, TRAVEL_GAP_MIN
 
 
@@ -343,10 +343,13 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     cfg = channel.settings(db.get)
     hook = viral.hook_opportunity(free, viral.strongest_moment(all_beats, length)) if cfg["hook_on"] else None
     after_hook = hook["t"] + hook["max_duration"] + 0.8 if hook else 0.0      # the welcome follows the cold open
+    series.assign_episode(vid)
     intro = channel.intro_opportunity(free, length, cfg, after=after_hook) if cfg["intro_on"] else None
     outro = channel.outro_opportunity(free, length, cfg, intro) if cfg["outro_on"] else None
     cliffs = viral.cliffhangers(all_beats, notes, free, length) if cfg["cliff_on"] else []
-    extra = after + [o for o in (hook, intro, outro) if o] + cliffs
+    anchor = (intro["t"] + min(intro["max_duration"], 10.0) if intro else after_hook) + 3.0      # the welcome is a sentence or two, not the whole gap
+    recap = series.recap_opportunity(free, anchor, series.previous(vid))
+    extra = after + [o for o in (hook, intro, recap, outro) if o] + cliffs
     quiet_fn = beats.travel_quiet_fn(notes) if daydream_on() else (lambda t: False)
     arm, offset = evolve.choose_arm(explicit)
     eager = amt + evolve.density_bias(opts["pack"]) + offset
@@ -373,7 +376,7 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
         "per_minute": round(len(lines) / (length / 60), 1), "possible_per_minute": possible,
         "cutscenes": len(cuts), "cutscene_seconds": cutscenes.total_seconds(cuts), "reactions": len(after),
         "daydreams": sum(1 for l in lines if "daydream" in (l.get("beat_kinds") or "")),
-        "hook": any(l.get("opp_id") == "hook" for l in lines),
+        "hook": any(l.get("opp_id") == "hook" for l in lines), "recap": any(l.get("opp_id") == "recap" for l in lines),
         "cliffhangers": sum(1 for l in lines if "cliffhanger" in (l.get("beat_kinds") or "")),
         "intro": any(l.get("opp_id") == "intro" for l in lines), "outro": any(l.get("opp_id") == "outro" for l in lines),
         "travel": travel_kinds, "travel_gap": travel_gap(), "catchphrases": n_catch, "speech_reactions": sum(1 for l in lines if "npc_" in (l.get("beat_kinds") or "")),
@@ -398,6 +401,8 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     set_status(vid, "ready")
     try:
         package(vid)
+        if series.enabled():
+            summarize_episode(vid)
     except Exception:
         traceback.print_exc()   # packaging is a courtesy and must never break a finished video
     try:
@@ -420,6 +425,21 @@ def _save_lines(vid, lines):
                 1 if ln.get("silent") else 0, ln.get("note")))
 
 
+def summarize_episode(vid):
+    """The story note the next episode's recap is built from."""
+    v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
+    work = workdir(vid)
+    notes, _ = _load(vid)
+    length = scenes.video_length(work / "source.mp4")
+    o = video_opts(v)
+    rows = [dict(r) for r in db.rows("SELECT start,line,silent,dropped,salience FROM lines WHERE video_id=? ORDER BY start", (vid,))]
+    fs = packaging.facts(o["game"], styles.PACKS[o["pack"]]["name"], length, notes,
+                         beats.find_beats(notes, evolve.kind_weights(), moral_mode()), viral.chapters(notes, length), rows)
+    note = series.note_for(fs)
+    db.run("UPDATE videos SET summary=? WHERE id=?", (note, vid))
+    return note
+
+
 def package(vid):
     """Titles, description, tags, a pinned comment and three thumbnails, from what the video really contains."""
     v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
@@ -429,7 +449,8 @@ def package(vid):
     o = video_opts(v)
     rows = [dict(r) for r in db.rows("SELECT start,line,silent,dropped,salience FROM lines WHERE video_id=? ORDER BY start", (vid,))]
     fs = packaging.facts(o["game"], styles.PACKS[o["pack"]]["name"], length, notes,
-                         beats.find_beats(notes, evolve.kind_weights(), moral_mode()), viral.chapters(notes, length), rows)
+                         beats.find_beats(notes, evolve.kind_weights(), moral_mode()), viral.chapters(notes, length), rows,
+                         episode=v.get("episode"), series=series.name())
     pkg = packaging.generate(fs)
     mi = pkg["thumb_moment"]
     at = fs["moments"][mi]["t"] if mi is not None else length / 2

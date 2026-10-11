@@ -74,6 +74,12 @@ The model sees only a fact sheet built from the scan (game, chapters, strongest 
 
 A window never runs into a cutscene, never cuts a spoken line in half, and never overlaps another. Moments are scan events, never something someone said. While it works the video shows "Cutting the highlight clips", and it goes back to ready afterwards, even if something fails (the reason is shown).
 
+## Growing the channel
+- **Series mode** (switch and optional series name in Channel lines): each new video is numbered as an episode, every title gets "Series Ep. N:", and the video opens with a short "previously" recap right after the welcome. The recap is written only from a story note saved when the last episode finished, itself built from that episode's real facts.
+- **Comments** (button on a video that is on YouTube): Check for new comments fetches them and drafts a reply for each in the channel voice. Abusive, spam, link or off-topic comments are skipped with a reason. You can edit each draft, and **nothing is posted until you press Post on that one reply** and confirm. Replies with links, hashtags, clickbait or over 280 characters are refused.
+- **Watch-time learning:** after videos are published, the audience-retention curve shows which kinds of moments kept viewers watching. Once a kind has at least five lines, it nudges how strongly that kind is weighted for the next video (never more than +20% or less than -15%). Needs YouTube connected.
+- **What to make next:** paste what you have seen is popular, press Suggest 5 ideas. Ideas come only from your notes, your past videos, the player memory and what kept viewers watching. Nothing is looked up online and no popularity is claimed.
+
 ## Caption looks
 
 Dialogue subtitles and the inner voice each have their own style and position, chosen in Voice with a live preview on a frame of your own video.

@@ -176,6 +176,8 @@
     </fieldset>
     <fieldset class="grp"><legend>Channel lines</legend>
       <label for="chname">Channel name (optional)</label><input id="chname" placeholder="Open World Diaries">
+      <label class="sw" style="margin-top:10px"><input type="checkbox" id="series_on" role="switch"><span><strong>Series mode</strong><br><span class="small">Numbers each new video as an episode, puts the episode number in every title, and opens with a short "previously" recap of the last episode, written only from what really happened in it.</span></span></label>
+      <label for="series_name">Series name (optional, used in titles)</label><input id="series_name" maxlength="60" placeholder="for example: The Long Ride">
       <label class="sw" style="margin-top:10px"><input type="checkbox" id="hook_on" role="switch"><span><strong>A cold-open teaser before the welcome</strong><br><span class="small">One short line in the first seconds that teases the strongest real moment later in the video. It never spoils the outcome and never promises more than the video shows.</span></span></label>
       <label class="sw"><input type="checkbox" id="cliff_on" role="switch"><span><strong>Suspense lines before big moments</strong><br><span class="small">A few seconds before a big moment, a short tense line, only when the scan shows something really building (a hostile close by, an animal approaching, aiming).</span></span></label>
       <label class="sw" style="margin-top:10px"><input type="checkbox" id="intro_on" role="switch"><span><strong>A welcome once at the start</strong></span></label>
@@ -244,6 +246,13 @@
     <div id="prompts" class="small"></div>
     <p><button class="s" id="evolve">Run evolution cycle now</button></p>
   </section>
+  <section>
+    <h2>6 · What to make next</h2>
+    <p class="small">Paste what you have seen is popular right now (titles, topics, comments). The ideas come only from what you paste plus your own channel history. Nothing is looked up on the internet.</p>
+    <textarea id="trendnotes" rows="5" maxlength="4000" aria-label="What is popular right now" placeholder="For example: horse-bond videos are doing well, a creator got views with a 'no weapons' challenge..."></textarea>
+    <div class="acts"><button class="s" id="trendsave">Save notes</button><button class="s primary" id="trendgo">Suggest 5 ideas</button></div>
+    <div id="trendideas"></div>
+  </section>
 </main>
 <script>
 const $ = id => document.getElementById(id);
@@ -255,7 +264,7 @@ const api = async (path, body) => {
   return j;
 };
 const say = (t, err) => { $('msg').textContent = t; $('msg').className = err ? 'err' : ''; };
-const OPEN = new Set(), ROPEN = new Set(), POPEN = new Set(), COPEN = new Set();
+const OPEN = new Set(), ROPEN = new Set(), POPEN = new Set(), COPEN = new Set(), MOPEN = new Set();
 let ready = false, lastSig = '';
 const LEVEL = n => n<=4 ? 'Sparse · only the strongest moments' : n<=7 ? 'Measured · strong moments and a few quiet thoughts' : 'Balanced to chatty · most meaningful moments, plus atmosphere in long silences';
 const WORKING = ['downloading','detecting','listening','watching','cutscenes','writing','voicing','captioning','uploading','clipping'];
@@ -288,7 +297,7 @@ function setAmount(n) {
 let ONEVOICE = true;
 function fillChannel(s) {
   $('dayd').checked = s.daydream; $('tlpm').value = s.travel_lpm || 0; $('know').checked = s.knowledge_on; $('moral').value = s.moral_mode;
-  const c = s.channel; $('chname').value = c.channel; $('hook_on').checked = c.hook_on; $('cliff_on').checked = c.cliff_on; $('intro_on').checked = c.intro_on; $('outro_on').checked = c.outro_on; $('catch_on').checked = c.catch_on;
+  const c = s.channel; $('chname').value = c.channel; $('series_on').checked = s.series_on; $('series_name').value = s.series_name; $('hook_on').checked = c.hook_on; $('cliff_on').checked = c.cliff_on; $('intro_on').checked = c.intro_on; $('outro_on').checked = c.outro_on; $('catch_on').checked = c.catch_on;
   $('intro_text').value = c.intro_text; $('outro_text').value = c.outro_text; $('catchphrases').value = c.catchphrases;
 }
 const saveSetting = (id, key, get) => { $(id).onchange = async () => { try { await api('settings', { [key]: get() }); say('Saved. It applies to new and regenerated videos.'); } catch (e) { say(e.message, true); } }; };
@@ -371,13 +380,14 @@ function card(v) {
   if (v.status === 'choose_style')
     return `<div class="vid">${head}${chooser(v)}<div class="acts"><button class="s danger" data-del="${v.id}">Delete</button></div></div>`;
   const r = REGEN[v.id] || {};
-  const style = v.pack ? `<span class="small">${esc(packName(v.pack))} · ${esc(persName(v.personality))}${v.game ? ' · ' + esc(v.game) : ''}</span>` : '';
+  const style = v.pack ? `<span class="small">${v.episode ? 'Episode ' + v.episode + ' · ' : ''}${esc(packName(v.pack))} · ${esc(persName(v.personality))}${v.game ? ' · ' + esc(v.game) : ''}</span>` : '';
   return `<div class="vid">${head}${style}
     <div class="acts">
       ${v.has_video && !busy ? `<a class="s" href="/api/videos/${v.id}/download" download>Download video</a>` : ''}
       <button class="s" data-lines="${v.id}">Lines</button>
       ${v.stats ? `<button class="s" data-report="${v.id}">Brain report</button>` : ''}
       ${v.has_video && !BUSYLIKE.includes(v.status) ? `<button class="s" data-pack="${v.id}">Packaging</button><button class="s" data-clips="${v.id}">Clips</button>` : ''}
+      ${v.yt_video_id && !BUSYLIKE.includes(v.status) ? `<button class="s" data-comments="${v.id}">Comments</button>` : ''}
       ${v.has_video && !BUSYLIKE.includes(v.status) ? `<button class="s" data-cuts="${v.id}">Cutscenes${v.cut_count ? ' (' + v.cut_count + ')' : ''}</button>` : ''}
       ${!busy && v.has_video ? `
         <select data-regsel="${v.id}:amount" aria-label="Commentary amount"><option value="">Same eagerness</option><option value="4" ${r.amount==='4'?'selected':''}>Sparse</option><option value="8" ${r.amount==='8'?'selected':''}>Balanced</option><option value="10" ${r.amount==='10'?'selected':''}>Chatty</option></select>
@@ -393,7 +403,7 @@ function card(v) {
       ${v.status==='failed' ? `<button class="s" data-retry="${v.id}">Retry</button>` : ''}
       ${!busy ? `<button class="s danger" data-del="${v.id}">Delete</button>` : ''}
       <span class="small">${v.combined_score!=null ? 'score ' + v.combined_score.toFixed(1) : ''}</span>
-    </div>${styleHint(v)}${voicesLine(v)}${brainLine(v)}<div id="c${v.id}"></div><div id="r${v.id}"></div><div id="p${v.id}"></div><div id="k${v.id}"></div><div id="l${v.id}"></div></div>`;
+    </div>${styleHint(v)}${voicesLine(v)}${brainLine(v)}<div id="c${v.id}"></div><div id="r${v.id}"></div><div id="p${v.id}"></div><div id="k${v.id}"></div><div id="m${v.id}"></div><div id="l${v.id}"></div></div>`;
 }
 
 function renderVusers() {
@@ -443,7 +453,7 @@ async function load() {
     live.innerHTML = `<div><span class="step">Waiting to start</span></div><div class="prog">${waiting.length} video${waiting.length > 1 ? 's' : ''} in line${s.enabled ? '' : '. Press Start AI analysis to process them.'}</div>`;
   } else { live.hidden = true; live.innerHTML = ''; }
   tick();
-  const sig = JSON.stringify([s.videos, s.channels, s.active_channel, s.memory, s.prompts, s.ratings, s.brain]);
+  const sig = JSON.stringify([s.videos, s.channels, s.active_channel, s.memory, s.prompts, s.ratings, s.brain, s.retention]);
   if (sig === lastSig) return;
   lastSig = sig;
   $('channel').innerHTML = s.channels.length
@@ -454,6 +464,7 @@ async function load() {
   for (const id of ROPEN) showReport(id);
   for (const id of POPEN) showPackaging(id);
   for (const id of COPEN) showClips(id);
+  for (const id of MOPEN) showComments(id);
   for (const id of OPENC) showCuts(id);
   $('memory').innerHTML = s.memory.length ? s.memory.map(m =>
     `<div class="mem"><span>${esc(m.text)} <span class="small">${m.kind}${m.count>1 ? ' · seen ' + m.count + 'x' : ''}</span></span><button class="s danger" data-forget="${m.id}">Forget</button></div>`).join('')
@@ -462,7 +473,8 @@ async function load() {
   const kw = Object.entries(s.brain.kind_weights).filter(([, w]) => w !== 1).map(([k, w]) => `${esc(k.replace('_', ' '))} x${w}`);
   $('ratings').innerHTML = `Your ratings so far: ${s.ratings.up} good, ${s.ratings.down} bad. Rated lines steer the next prompt version.<br>` +
     `Learned eagerness: ${bias.length ? bias.join(' · ') : 'no adjustment yet (rate a video as too quiet or too chatty).'}<br>` +
-    `Learned taste for moments: ${kw.length ? kw.join(' · ') : 'none yet (use 👍/👎 on lines).'}`;
+    `Learned taste for moments: ${kw.length ? kw.join(' · ') : 'none yet (use 👍/👎 on lines).'}<br>` +
+    `Learned from watch time: ${s.retention.filter(r => r.weight).length ? s.retention.filter(r => r.weight).map(r => `${esc(r.kind)} ×${r.weight}`).join(' · ') : 'nothing yet (needs published videos and at least 5 lines of a kind).'}`;
   $('prompts').innerHTML = s.prompts.map(p =>
     `v${p.id} · ${p.status} · ${p.n} videos · avg ${p.n ? (p.score_sum/p.n).toFixed(2) : '-'}`).join('<br>');
 }
@@ -481,6 +493,16 @@ async function showCuts(id) {
     <div class="small">After changing ranges, press <strong>Rebuild video</strong> (lines inside new cutscenes are dropped) or <strong>Regenerate commentary</strong> to plan again.</div></div>`;
 }
 
+async function showComments(id) {
+  const box = $('m' + id); if (!box) return;
+  const rs = await api(`videos/${id}/replies`);
+  const note = '<span class="small"> Drafts in the channel voice. Nothing is posted until you press Post on that one reply.</span>';
+  box.innerHTML = `<div class="prog"><button class="s primary" data-fetchcom="${id}">Check for new comments</button>${note}</div>` +
+    (rs.map(r => `<div class="ln ${r.status === 'posted' || r.status === 'skipped' ? 'off' : ''}"><div class="small"><strong>${esc(r.author)}</strong>: ${esc(r.comment)}</div>` +
+      (r.status === 'draft' ? `<input class="ed" id="rd${r.id}" value="${esc(r.draft)}" maxlength="280" aria-label="Reply to ${esc(r.author)}">
+        <button class="s" data-repedit="${r.id}">Save edit</button><button class="s primary" data-reppost="${r.id}">Post this reply</button><button class="s" data-repskip="${r.id}">Skip</button>`
+       : `<span class="small">${r.status === 'posted' ? 'Posted: ' + esc(r.draft) : 'Skipped: ' + esc(r.note || '')}</span>`) + `</div>`).join('') || '<div class="small">No comments fetched yet.</div>');
+}
 async function showClips(id) {
   const box = $('k' + id); if (!box) return;
   let c; try { c = await api(`videos/${id}/clips`); } catch (e) {
@@ -564,7 +586,7 @@ document.querySelectorAll('[data-cap]').forEach(el => el.onchange = async () => 
 $('cprevkind').onchange = refreshPreview;
 saveSetting('dayd', 'daydream', () => $('dayd').checked); saveSetting('tlpm', 'travel_lpm', () => +$('tlpm').value || 0); saveSetting('know', 'knowledge_on', () => $('know').checked);
 saveSetting('moral', 'moral_mode', () => $('moral').value); saveSetting('chname', 'channel_name', () => $('chname').value);
-saveSetting('hook_on', 'hook_on', () => $('hook_on').checked); saveSetting('cliff_on', 'cliff_on', () => $('cliff_on').checked); saveSetting('intro_on', 'intro_on', () => $('intro_on').checked); saveSetting('outro_on', 'outro_on', () => $('outro_on').checked);
+saveSetting('series_on', 'series_on', () => $('series_on').checked); saveSetting('series_name', 'series_name', () => $('series_name').value); saveSetting('hook_on', 'hook_on', () => $('hook_on').checked); saveSetting('cliff_on', 'cliff_on', () => $('cliff_on').checked); saveSetting('intro_on', 'intro_on', () => $('intro_on').checked); saveSetting('outro_on', 'outro_on', () => $('outro_on').checked);
 saveSetting('catch_on', 'catch_on', () => $('catch_on').checked); saveSetting('intro_text', 'intro_text', () => $('intro_text').value);
 saveSetting('outro_text', 'outro_text', () => $('outro_text').value); saveSetting('catchphrases', 'catchphrases', () => $('catchphrases').value);
 $('cutq').onchange = async () => { await api('settings', { cutscene_quiet: $('cutq').checked }); say($('cutq').checked ? 'Cutscenes are kept silent and caption-free for new and rebuilt videos.' : 'Cutscenes are no longer treated specially.'); };
@@ -577,6 +599,12 @@ $('personality').onchange = async () => { await api('settings', { personality: $
 $('vpack').onchange = loadVoices;
 $('amount').oninput = () => setAmount(+$('amount').value);
 $('amount').onchange = async () => { await api('settings', { amount: +$('amount').value }); say('Commentary amount saved. It applies to new videos and regenerates.'); };
+function showIdeas(ideas) {
+  $('trendideas').innerHTML = ideas.length ? ideas.map(i => `<div class="ln"><strong>${esc(i.title)}</strong><span class="small">${esc(i.why)} · style: ${esc(packName(i.style))}<br>Teaser: ${esc(i.hook)}</span></div>`).join('') : '<div class="small">No ideas yet.</div>';
+}
+(async () => { try { const t = await api('trends'); $('trendnotes').value = t.notes; showIdeas(t.ideas); } catch (_) {} })();
+$('trendsave').onclick = async () => { try { await api('trends/notes', { text: $('trendnotes').value }); say('Saved.'); } catch (e) { say(e.message, true); } };
+$('trendgo').onclick = async () => { say('Thinking about what to make next...'); try { await api('trends/notes', { text: $('trendnotes').value }); const r = await api('trends/suggest', {}); showIdeas(r.ideas); say('Done.'); } catch (e) { say(e.message, true); } };
 $('evolve').onclick = async () => { say('Running...'); try { const r = await api('evolve/run', {}); say(`Done: ${JSON.stringify(r)}`); } catch (e) { say(e.message, true); } lastSig=''; load(); };
 const del = async path => { const r = await fetch('/api/' + path, { method: 'DELETE' }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'failed'); };
 const refresh = () => { lastSig = ''; return load(); };
@@ -595,6 +623,11 @@ document.addEventListener('click', async e => {
   try {
     if (d.preset) { setAmount(+d.preset); await api('settings', { amount: +d.preset }); say('Commentary amount saved.'); }
     if (d.copychap) { const el = $('ch' + d.copychap); try { await navigator.clipboard.writeText(el.textContent); say('Chapters copied.'); } catch (_) { say('Select the chapters and copy them by hand.', true); } }
+    if (d.comments) { const id = +d.comments; MOPEN.has(id) ? MOPEN.delete(id) : MOPEN.add(id); if (MOPEN.has(id)) showComments(id); else $('m'+id).innerHTML=''; }
+    if (d.fetchcom) { say('Fetching comments and drafting replies...'); try { const r = await api(`videos/${d.fetchcom}/comments/fetch`, {}); say(`${r.added} new comment${r.added === 1 ? '' : 's'} drafted (${r.seen} seen).`); } catch (e) { say(e.message, true); } showComments(+d.fetchcom); }
+    if (d.repedit) { try { await api(`replies/${d.repedit}/edit`, { draft: $('rd' + d.repedit).value }); say('Saved.'); } catch (e) { say(e.message, true); } }
+    if (d.reppost && confirm('Post this reply to YouTube now?')) { try { await api(`replies/${d.reppost}/post`, {}); say('Posted.'); } catch (e) { say(e.message, true); } for (const id of MOPEN) showComments(id); }
+    if (d.repskip) { await api(`replies/${d.repskip}/skip`, {}); for (const id of MOPEN) showComments(id); }
     if (d.clips) { const id = +d.clips; COPEN.has(id) ? COPEN.delete(id) : COPEN.add(id); if (COPEN.has(id)) showClips(id); else $('k'+id).innerHTML=''; }
     if (d.mkclips) { try { await api(`videos/${d.mkclips}/clips`, {}); say('Cutting the clips. This takes a few minutes.'); COPEN.add(+d.mkclips); await refresh(); } catch (e) { say(e.message, true); } }
     if (d.copy) { try { await navigator.clipboard.writeText(decodeURIComponent(d.copy)); say('Copied.'); } catch (_) { say('Copy failed. Select the text and copy it by hand.', true); } }

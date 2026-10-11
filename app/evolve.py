@@ -173,6 +173,9 @@ def kind_weights():
     for k in set(up) | set(down):
         u, d = up.get(k, 0), down.get(k, 0)
         out[k] = round(max(0.6, min(1.6, 1 + 0.2 * (u - d) / math.sqrt(u + d + 1))), 2)
+    from . import analytics      # what the audience really kept watching, once there is enough of it
+    for k, w in analytics.weights().items():
+        out[k] = round(max(0.5, min(1.8, out.get(k, 1.0) * w)), 2)
     return out
 
 
@@ -205,5 +208,10 @@ def maybe_shift(pack):
 def cycle():
     """Run after every video and from the UI button."""
     fetch_analytics()
+    try:
+        from . import analytics
+        analytics.learn()
+    except Exception as e:     # learning from watch time is a bonus and must never stop the cycle
+        print("retention learning skipped:", e)
     shifts = {p["pack"]: maybe_shift(p["pack"]) for p in db.rows("SELECT DISTINCT pack FROM videos WHERE pack IS NOT NULL")}
     return {"promote": maybe_promote(), "mutate": maybe_mutate(), "eagerness_shift": {k: v for k, v in shifts.items() if v}}

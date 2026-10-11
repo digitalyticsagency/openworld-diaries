@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from . import captions, cutscenes, db, envfile, evolve, google_auth, knowledge, pipeline, sources, styles, voices
+from . import analytics, captions, comments, trends, cutscenes, db, envfile, evolve, google_auth, knowledge, pipeline, series, sources, styles, voices
 from . import channel as channel_lines
 from .config import POLL_SECONDS
 
@@ -121,6 +121,8 @@ class Settings(BaseModel):
     one_voice: bool | None = None
     daydream: bool | None = None
     hook_on: bool | None = None
+    series_on: bool | None = None
+    series_name: str | None = None
     cliff_on: bool | None = None
     intro_on: bool | None = None
     outro_on: bool | None = None
@@ -217,6 +219,7 @@ def state():
         "cutscene_quiet": pipeline.cutscene_quiet(),
         "one_voice": pipeline.one_voice(),
         "daydream": pipeline.daydream_on(),
+        "series_on": series.enabled(), "series_name": series.name(),
         "moral_mode": pipeline.moral_mode(),
         "knowledge_on": db.get("knowledge_on", "1") == "1",
         "channel": {**{k: v for k, v in channel_lines.settings(db.get).items() if k != "phrases"},
@@ -239,11 +242,12 @@ def state():
                     "cut_count": len(cutscenes.effective(cutscenes.load(v["cutscenes"]))),
                     "cut_seconds": cutscenes.total_seconds(cutscenes.effective(cutscenes.load(v["cutscenes"])))} for v in db.rows(
             "SELECT id,name,status,error,self_score,combined_score,yt_video_id,pack,personality,game,suggestion,cutscenes,"
-            "status_at,started_at,progress,density_rating,stats,arm "
+            "status_at,started_at,progress,density_rating,stats,arm,episode "
             "FROM videos ORDER BY id DESC LIMIT 50")],
         "brain": {"bias": {p: evolve.density_bias(p) for p in styles.PACKS if evolve.density_bias(p)},
                   "kind_weights": evolve.kind_weights()},
         "memory": db.rows("SELECT id,kind,text,count FROM memory ORDER BY count DESC, updated DESC LIMIT 40"),
+        "retention": analytics.report(),
         "ratings": db.one("SELECT COALESCE(SUM(thumb=1),0) up, COALESCE(SUM(thumb=-1),0) down FROM lines"),
         "prompts": db.rows("SELECT id,status,n,score_sum,created FROM prompt_versions ORDER BY id DESC LIMIT 10"),
     }
@@ -312,14 +316,14 @@ def settings(s: Settings):
         elif k == "personality":
             v = styles.personality_id(v)
         elif k in ("youtube_publish", "learn", "ask_style", "ab_test", "cap_commentary", "cap_dialogue", "cutscene_quiet", "one_voice",
-                    "daydream", "intro_on", "outro_on", "catch_on", "knowledge_on", "hook_on", "cliff_on"):
+                    "daydream", "intro_on", "outro_on", "catch_on", "knowledge_on", "hook_on", "cliff_on", "series_on"):
             v = "1" if v else "0"
         elif k == "amount":
             v = max(1, min(10, v))
         elif k == "moral_mode":
             if v not in ("both", "cues"):
                 raise HTTPException(400, "moral_mode must be both or cues.")
-        elif k in ("channel_name", "intro_text", "outro_text"):
+        elif k in ("channel_name", "intro_text", "outro_text", "series_name"):
             v = " ".join(v.split())[:300]
         elif k == "catchphrases":
             v = "\n".join(p.strip()[:80] for p in v.splitlines() if p.strip())[:1200]
@@ -389,6 +393,93 @@ def clip_file(vid: int, name: str):
     if not path.exists():
         raise HTTPException(404, "No such clip.")
     return FileResponse(path, media_type="video/mp4", filename=f"clip_{vid}_{name}.mp4")
+
+
+def _published(vid):
+    v = db.one("SELECT yt_video_id, channel_id, game FROM videos WHERE id=?", (vid,))
+    if not v:
+        raise HTTPException(404, "No such video.")
+    if not v["yt_video_id"]:
+        raise HTTPException(400, "This video is not on YouTube yet, so it has no comments.")
+    return v
+
+
+@app.post("/api/videos/{vid}/comments/fetch")
+def fetch_comments(vid: int):
+    """Pull the video's comments from YouTube and draft a reply for each new one. Nothing is posted."""
+    v = _published(vid)
+    try:
+        found = comments.fetch(v["channel_id"], v["yt_video_id"])
+        fresh = [c for c in found if not db.one("SELECT id FROM replies WHERE comment_id=?", (c["id"],))]
+        drafts = comments.draft(fresh, pipeline.options().get("character") or "the narrator", v["game"] or pipeline.options()["game"])
+        return {"added": comments.save(vid, fresh, drafts), "seen": len(found)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(400, str(e)[:300])
+
+
+@app.get("/api/videos/{vid}/replies")
+def list_replies(vid: int):
+    return db.rows("SELECT id,author,comment,draft,status,note FROM replies WHERE video_id=? ORDER BY id", (vid,))
+
+
+class ReplyEdit(BaseModel):
+    draft: str
+
+
+@app.post("/api/replies/{rid}/edit")
+def edit_reply(rid: int, e: ReplyEdit):
+    r = db.one("SELECT status FROM replies WHERE id=?", (rid,))
+    if not r or r["status"] == "posted":
+        raise HTTPException(400, "This reply cannot be edited.")
+    text = comments.clean_reply(e.draft)
+    if not text:
+        raise HTTPException(400, "A reply must be 1-280 characters, with no link, no hashtag and no clickbait wording.")
+    db.run("UPDATE replies SET draft=?, status='draft' WHERE id=?", (text, rid))
+    return {"draft": text}
+
+
+@app.post("/api/replies/{rid}/skip")
+def skip_reply(rid: int):
+    db.run("UPDATE replies SET status='skipped' WHERE id=? AND status='draft'", (rid,))
+    return {"ok": True}
+
+
+@app.post("/api/replies/{rid}/post")
+def post_reply(rid: int):
+    """The owner pressed Post on this one reply."""
+    r = db.one("SELECT video_id FROM replies WHERE id=?", (rid,))
+    if not r:
+        raise HTTPException(404, "No such reply.")
+    v = _published(r["video_id"])
+    try:
+        return {"posted": comments.post(rid, v["channel_id"])}
+    except Exception as e:
+        raise HTTPException(400, str(e)[:300])
+
+
+class TrendNotes(BaseModel):
+    text: str
+
+
+@app.post("/api/trends/notes")
+def save_trend_notes(t: TrendNotes):
+    db.put("trends_text", t.text.strip()[:trends.MAX_PASTE])
+    return {"ok": True}
+
+
+@app.get("/api/trends")
+def get_trends():
+    return {"notes": trends.pasted(), "ideas": trends.saved()}
+
+
+@app.post("/api/trends/suggest")
+def suggest_trends():
+    try:
+        return {"ideas": trends.suggest(pipeline.options()["game"])}
+    except Exception as e:
+        raise HTTPException(400, str(e)[:300])
 
 
 @app.get("/api/videos/{vid}/packaging")
