@@ -406,7 +406,8 @@ function card(v) {
       ${v.status==='awaiting_approval' ? `<a class="s" href="https://youtu.be/${v.yt_video_id}" target="_blank" rel="noopener">Open on YouTube</a><button class="s" data-approve="${v.id}">Make public</button>` : ''}
       ${v.status==='published' ? `<a class="s" href="https://youtu.be/${v.yt_video_id}" target="_blank" rel="noopener">Open on YouTube</a>` : ''}
       ${v.status==='failed' ? `<button class="s" data-retry="${v.id}">Retry</button>` : ''}
-      ${!busy ? `<button class="s danger" data-del="${v.id}">Delete</button>` : ''}
+      ${v.status==='queued' ? `<button class="s primary" data-retry="${v.id}" title="Start this video now. A scan that was stopped carries on where it stopped.">Start now</button>` : ''}
+      ${!busy || v.status==='queued' ? `<button class="s danger" data-del="${v.id}">Delete</button>` : ''}
       <span class="small">${v.combined_score!=null ? 'score ' + v.combined_score.toFixed(1) : ''}</span>
     </div>${styleHint(v)}${voicesLine(v)}${brainLine(v)}<div id="c${v.id}"></div><div id="r${v.id}"></div><div id="p${v.id}"></div><div id="k${v.id}"></div><div id="m${v.id}"></div><div id="l${v.id}"></div></div>`;
 }

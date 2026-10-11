@@ -18,6 +18,7 @@ from .config import POLL_SECONDS
 STATIC = Path(__file__).parent / "static"
 _watcher = {"thread": None}
 _busy = threading.Lock()
+STOPPED_NOTE = "Stopped when the app restarted. Press Start now to carry on; the scan resumes where it stopped."
 WORKING = pipeline.WORKING
 
 
@@ -95,7 +96,8 @@ async def lifespan(app):
     # Anything stuck mid-run when the app last stopped goes back in the queue.
     db.run("UPDATE videos SET status='ready' WHERE status='clipping'")      # cutting clips was interrupted: the video itself is fine
     marks = ",".join("?" * len(WORKING))
-    db.run(f"UPDATE videos SET status='queued' WHERE status IN ({marks})", tuple(WORKING))
+    db.run(f"UPDATE videos SET status='queued', progress=? WHERE status IN ({marks})",
+           (STOPPED_NOTE,) + tuple(WORKING))
     if db.get("enabled") == "1":
         start_watcher()
     yield
@@ -275,7 +277,10 @@ def analyze():
     ingest(settle=0)   # the user says go: uploads are complete, so do not wait for them to settle
     ids = [v["id"] for v in db.rows("SELECT id FROM videos WHERE status='queued' ORDER BY id")]
     if not ids:
-        raise HTTPException(400, "Nothing to analyse. Upload a video first.")
+        gone = sum(1 for k in db.rows("SELECT key FROM settings WHERE key LIKE 'ignored:%'") if Path(k["key"][8:]).exists())
+        raise HTTPException(400, "Nothing to analyse. Upload a video first." + (
+            f" ({gone} file{'s' if gone != 1 else ''} in the folder {'were' if gone != 1 else 'was'} deleted from the app earlier and"
+            " will not be picked up again; upload again to analyse a deleted video.)" if gone else ""))
 
     def go():
         for i in ids:

@@ -159,3 +159,57 @@ def cutscenes_empty():
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StoppedByRestartTests(unittest.TestCase):
+    """A restart in the middle of a scan must say so, and give the owner a way to carry on."""
+
+    def test_an_interrupted_video_says_why_it_is_waiting(self):
+        from fastapi.testclient import TestClient
+        from app.server import app, STOPPED_NOTE
+        vid = db.run("INSERT INTO videos(drive_id,name,status,created,progress) VALUES(?,?,?,?,?)",
+                     (f"st{time.time_ns()}", "x.mp4", "watching", time.time(), "Frames 10/186 · about 14:06 left")).lastrowid
+        with TestClient(app):
+            pass
+        row = db.one("SELECT status,progress FROM videos WHERE id=?", (vid,))
+        self.assertEqual((row["status"], row["progress"]), ("queued", STOPPED_NOTE))
+        self.assertIn("Start now", STOPPED_NOTE)
+
+    def test_start_now_runs_a_queued_video_even_with_auto_off(self):
+        from unittest import mock
+        from fastapi.testclient import TestClient
+        from app.server import app
+        db.put("enabled", "0")
+        vid = db.run("INSERT INTO videos(drive_id,name,status,created) VALUES(?,?,?,?)", (f"sn{time.time_ns()}", "x.mp4", "queued", time.time())).lastrowid
+        with mock.patch("app.server.run_bg") as run:
+            self.assertEqual(TestClient(app).post(f"/api/videos/{vid}/retry").status_code, 200)
+        run.assert_called_once()
+        self.assertIs(run.call_args.args[0], pipeline.process)
+
+    def test_the_page_offers_start_now_and_delete_on_a_waiting_video(self):
+        from app.config import ROOT
+        html = (ROOT / "app" / "static" / "index.html").read_text()
+        self.assertIn("v.status==='queued' ? `<button class=\"s primary\" data-retry", html)
+        self.assertIn("!busy || v.status==='queued'", html)
+
+    def test_nothing_to_analyse_explains_files_that_were_deleted_earlier(self):
+        from pathlib import Path
+        from fastapi.testclient import TestClient
+        from app.server import app
+        from app import sources
+        db.run("UPDATE videos SET status='ready' WHERE status='queued'")
+        d = Path(tempfile.mkdtemp())
+        f = d / "gone.mp4"
+        f.write_bytes(b"x")
+        db.put("folder_id", str(d))
+        db.put(f"ignored:{f}", "1")
+        old = time.time() - 60
+        os.utime(f, (old, old))
+        try:
+            with mock.patch("app.server.watched_folders", return_value=[str(d)]), mock.patch("app.server.threading.Thread") as th:
+                r = TestClient(app).post("/api/analyze")
+            th.assert_not_called()          # nothing was found, so nothing starts
+        finally:
+            db.run("DELETE FROM settings WHERE key IN ('folder_id', ?)", (f"ignored:{f}",))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("deleted from the app earlier", r.json()["detail"])
