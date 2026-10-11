@@ -180,5 +180,34 @@ class MissingKeyTests(unittest.TestCase):
         self.assertIn("API keys", str(cm.exception))
 
 
+class KeyBackupTests(unittest.TestCase):
+    def test_keys_are_also_kept_outside_the_project_folder(self):
+        from pathlib import Path
+        from unittest import mock
+        from app import envfile
+        keep = Path(tempfile.mkdtemp()) / "home.env"
+        with mock.patch.object(envfile, "ENV_PATH", envfile.ROOT / ".env"), mock.patch.object(envfile, "KEEP_ENV", keep), \
+                mock.patch.object(envfile, "_put") as put:
+            envfile._write(["GEMINI_API_KEY=abc"])
+        self.assertEqual([c.args[0] for c in put.call_args_list], [envfile.ROOT / ".env", keep])
+
+    def test_a_test_file_never_touches_the_home_copy(self):
+        from pathlib import Path
+        from unittest import mock
+        from app import envfile
+        d = Path(tempfile.mkdtemp())
+        with mock.patch.object(envfile, "ENV_PATH", d / ".env"), mock.patch.object(envfile, "KEEP_ENV", d / "home.env"):
+            envfile._write(["X=1"])
+        self.assertFalse((d / "home.env").exists())
+
+    def test_the_home_copy_is_private(self):
+        from pathlib import Path
+        from unittest import mock
+        from app import envfile
+        d = Path(tempfile.mkdtemp())
+        envfile._put(d / "k.env", ["A=1"])
+        self.assertEqual((d / "k.env").stat().st_mode & 0o777, 0o600)
+
+
 if __name__ == "__main__":
     unittest.main()

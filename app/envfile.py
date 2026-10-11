@@ -7,7 +7,7 @@ import os
 import re
 import tempfile
 
-from .config import ROOT
+from .config import KEEP_ENV, ROOT
 
 ENV_PATH = ROOT / ".env"
 
@@ -61,11 +61,20 @@ def clear(name):
 
 
 def _write(lines):
-    fd, tmp = tempfile.mkstemp(dir=ENV_PATH.parent, prefix=".env.")
+    _put(ENV_PATH, lines)
+    if ENV_PATH == ROOT / ".env":       # the real file, not a test's: keep a copy that survives the project folder being wiped
+        try:
+            _put(KEEP_ENV, lines)
+        except OSError:
+            pass
+
+
+def _put(path, lines):
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".env.")
     with os.fdopen(fd, "w") as f:
         f.write("\n".join(lines) + "\n")
     os.chmod(tmp, 0o600)
-    os.replace(tmp, ENV_PATH)
+    os.replace(tmp, path)
 
 
 def status():

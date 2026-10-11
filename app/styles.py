@@ -1,4 +1,4 @@
-"""The 10 genre packs and the personality layer that sits on top of them.
+"""The genre packs (10 general ones and 10 more for Red Dead Redemption 2) and the personality layer that sits on top of them.
 
 A pack carries the vocabulary, what to react to, the tone, and default voices for a kind of game.
 A personality changes the attitude. Neither can override the hard guardrails.
@@ -110,6 +110,10 @@ PACKS = {
     },
 }
 
+from .rdr2_packs import RDR2_PACKS  # noqa: E402
+
+PACKS.update(RDR2_PACKS)
+
 PERSONALITIES = {
     "balanced": ("Balanced", "Follow the genre pack's own tone with no extra twist."),
     "sarcastic": ("Sarcastic", "Dry, quick and self-mocking. Roast the player's mistakes affectionately. One good joke beats three."),
@@ -141,6 +145,13 @@ def pack_for_game(game):
         if any(n in g for n in names):
             return pack
     return None
+
+
+def same_family(a, b):
+    """True when two packs are the same kind of game (the Red Dead styles all belong with Western outlaw)."""
+    fa = PACKS.get(a, {}).get("family", a)
+    fb = PACKS.get(b, {}).get("family", b)
+    return bool(a) and bool(b) and fa == fb
 
 
 def pack_id(value):

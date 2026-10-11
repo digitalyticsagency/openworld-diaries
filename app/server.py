@@ -232,7 +232,7 @@ def state():
         "videos": [{**v, "has_video": pipeline.final_path(v["id"]).exists(),
                     "voices": {p: voices.resolve(v["pack"], p) for p in ("player", "character", "companion")},
                     "knowledge_name": knowledge.name_for_game(v["game"]),
-                    "scan_has_actions": _scan_has_actions(v["id"]), "known_pack": styles.pack_for_game(v["game"]),
+                    "scan_has_actions": _scan_has_actions(v["id"]), "known_pack": (v["pack"] if styles.same_family(v["pack"], styles.pack_for_game(v["game"])) else styles.pack_for_game(v["game"])),
                     "cut_count": len(cutscenes.effective(cutscenes.load(v["cutscenes"]))),
                     "cut_seconds": cutscenes.total_seconds(cutscenes.effective(cutscenes.load(v["cutscenes"])))} for v in db.rows(
             "SELECT id,name,status,error,self_score,combined_score,yt_video_id,pack,personality,game,suggestion,cutscenes,"

@@ -19,8 +19,8 @@ from app.server import app  # noqa: E402
 
 
 class PackTests(unittest.TestCase):
-    def test_ten_complete_packs(self):
-        self.assertEqual(len(styles.PACKS), 10)
+    def test_twenty_complete_packs(self):
+        self.assertEqual(len(styles.PACKS), 20)
         for k, p in styles.PACKS.items():
             for field in ("name", "games", "hints", "text", "voices"):
                 self.assertTrue(p[field], f"{k} missing {field}")
@@ -94,7 +94,7 @@ class ServerStyleTests(unittest.TestCase):
 
     def test_state_lists_catalog(self):
         s = self.c.get("/api/state").json()
-        self.assertEqual(len(s["packs"]), 10)
+        self.assertEqual(len(s["packs"]), 20)
         self.assertEqual(len(s["personalities"]), 6)
         self.assertTrue(s["ask_style"])
 
@@ -142,3 +142,24 @@ class ServerStyleTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Rdr2PackTests(unittest.TestCase):
+    def test_ten_red_dead_styles_that_belong_with_the_western_family(self):
+        rdr = {k: p for k, p in styles.PACKS.items() if k.startswith("rdr2_")}
+        self.assertEqual(len(rdr), 10)
+        for k, p in rdr.items():
+            self.assertEqual(p["family"], "western", k)
+            self.assertIn("Red Dead", p["text"], k)
+        self.assertEqual(len({p["name"] for p in rdr.values()}), 10)
+
+    def test_a_red_dead_style_does_not_trigger_the_wrong_style_hint(self):
+        self.assertTrue(styles.same_family("rdr2_hunter", "western"))
+        self.assertTrue(styles.same_family("western", "western"))
+        self.assertFalse(styles.same_family("crime", "western"))
+        self.assertFalse(styles.same_family(None, "western"))
+
+    def test_a_red_dead_style_reaches_the_prompt(self):
+        system = writer.build_system("STYLE", {"game": "Red Dead Redemption 2", "persona": "mixed", "pack": "rdr2_bounty", "personality": "balanced"})
+        self.assertIn("GENRE: Red Dead, the bounty hunter", system)
+        self.assertIn("SILENCE DURING SPEECH", system)
