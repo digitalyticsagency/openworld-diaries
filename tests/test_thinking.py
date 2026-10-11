@@ -157,7 +157,7 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(c.post(f"/api/videos/{v}/regenerate", json={"themes": ["past"], "theme_note": "an old regret"}).status_code, 200)
         args = run.call_args.args
         self.assertIs(args[0], pipeline.regenerate)
-        self.assertEqual(args[-2:], (["past"], "an old regret"))
+        self.assertEqual(args[-4:-2], (["past"], "an old regret"))
 
 
 class PipelineTests(unittest.TestCase):

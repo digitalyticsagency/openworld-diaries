@@ -167,6 +167,8 @@
       <label class="rad"><input type="radio" name="amtmode" value="manual" id="amt_manual"> <span><strong>Manual</strong> · aim for <input type="number" id="lpm" min="1" max="12" step="0.5" value="5" style="width:80px;display:inline-block;padding:6px 8px"> lines a minute, spoken lines plus silent thoughts, as far as the video's room allows</span></label>
     </fieldset>
     <fieldset class="grp"><legend>Pacing and what it reacts to</legend>
+      <label class="sw"><input type="checkbox" id="story_on" role="switch"><span><strong>Inner story only, by default</strong><br><span class="small">New videos get only a running train of thought while he rides, walks or runs: each line picks up from the last, a passing sight can start a thought but is never described, and fights, shops and conversations stay silent. The welcome and the outro stay. Each video can change it.</span></span></label>
+      <label for="story_lpm">Inner story: lines a minute (1.5 to 10; 6 is a line every 10 seconds)</label><input type="number" id="story_lpm" min="1.5" max="10" step="0.5" value="6" style="width:110px">
       <label class="sw"><input type="checkbox" id="calm_on" role="switch"><span><strong>Calm free-roam pace</strong><br><span class="small">For relaxed exploring videos with little happening (about 4 moments a minute or fewer; a busier video, such as a dash or a chase, keeps the normal pace): only the strongest moments get a line, thoughts on the road are at least 55 seconds apart, and the long stretches stay quiet. Pick one of the "Free roam" styles for the matching tone. If you also ask for a number of lines a minute (Manual), that explicit choice wins over this pace.</span></span></label>
       <div class="grp-sub"><strong>My favourite thinking themes</strong> <span class="small">Ticked for every new video (you can change them per video). Only the quiet thoughts on the road follow them.</span>
         <div id="favthemes" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:4px 14px;margin:6px 0"></div>
@@ -322,7 +324,7 @@ function setAmount(n) {
 let ONEVOICE = true;
 function fillChannel(s) {
   $('dayd').checked = s.daydream; $('tlpm').value = s.travel_lpm || 0; $('know').checked = s.knowledge_on; $('moral').value = s.moral_mode;
-  const c = s.channel; $('chname').value = c.channel; $('amb_on').checked = s.ambience_on; $('calm_on').checked = s.calm_mode; $('music_mode').value = s.music_mode; showOwnMusic(s); $('game_audio').value = s.game_audio; $('game_audio_val').textContent = s.game_audio + '%'; $('series_on').checked = s.series_on; $('series_name').value = s.series_name; $('hook_on').checked = c.hook_on; $('cliff_on').checked = c.cliff_on; $('intro_on').checked = c.intro_on; $('outro_on').checked = c.outro_on; $('catch_on').checked = c.catch_on;
+  const c = s.channel; $('chname').value = c.channel; $('amb_on').checked = s.ambience_on; $('calm_on').checked = s.calm_mode; $('story_on').checked = s.story_mode; $('story_lpm').value = s.story_lpm; $('music_mode').value = s.music_mode; showOwnMusic(s); $('game_audio').value = s.game_audio; $('game_audio_val').textContent = s.game_audio + '%'; $('series_on').checked = s.series_on; $('series_name').value = s.series_name; $('hook_on').checked = c.hook_on; $('cliff_on').checked = c.cliff_on; $('intro_on').checked = c.intro_on; $('outro_on').checked = c.outro_on; $('catch_on').checked = c.catch_on;
   $('intro_text').value = c.intro_text; $('outro_text').value = c.outro_text; $('catchphrases').value = c.catchphrases;
 }
 const saveSetting = (id, key, get) => { $(id).onchange = async () => { try { await api('settings', { [key]: get() }); say('Saved. It applies to new and regenerated videos.'); } catch (e) { say(e.message, true); } }; };
@@ -354,7 +356,7 @@ function refreshPreview() {
   }, 120);
 }
 function markOneVoice() { for (const p of ['player', 'companion']) { const sel = $('v_' + p); if (sel) sel.disabled = ONEVOICE; sel && (sel.title = ONEVOICE ? 'Not used while one consistent voice is on' : ''); } }
-let DEFAULT_THEMES = [], CAT = {packs: [], personalities: [], themes: []}, PERSONALITY = 'balanced', VOICES = [], VIDEOS = [];
+let STORY = { on: false, lpm: 6 }, DEFAULT_THEMES = [], CAT = {packs: [], personalities: [], themes: []}, PERSONALITY = 'balanced', VOICES = [], VIDEOS = [];
 const vname = id => (VOICES.find(v => v.id === id) || {}).name || 'a voice';
 const CHOOSE = {};
 const opt = (list, sel) => list.map(x => `<option value="${x.id}" ${x.id===sel?'selected':''}>${esc(x.name)}</option>`).join('');
@@ -365,12 +367,17 @@ function renderFavThemes() {
   const box = $('favthemes'); if (!box) return;
   box.innerHTML = CAT.themes.map(t => `<label class="rad"><input type="checkbox" data-fav="${t.id}" ${DEFAULT_THEMES.includes(t.id) ? 'checked' : ''}> <span>${esc(t.name)}</span></label>`).join('');
 }
+function storyBox(id, on, lpm, attrs) {
+  return `<div class="storybox"><label class="sw"><input type="checkbox" data-${attrs[0]}="${id}" ${on ? 'checked' : ''}><span><strong>Inner story only</strong><br><span class="small">Just a running train of thought while he rides, walks or runs. Silent in fights, shops and conversations.</span></span></label>
+    <label class="small">Lines a minute <input type="number" data-${attrs[1]}="${id}" min="1.5" max="10" step="0.5" value="${lpm}" style="width:80px;display:inline-block;padding:6px 8px"></label></div>`;
+}
 function thinkingBoxInner(v) {
   let mine = DEFAULT_THEMES; if (v.themes != null) { try { mine = JSON.parse(v.themes); } catch (_) {} }
   const r = REGEN[v.id] || {}, chosen = r.themes ?? mine, note = r.theme_note ?? v.theme_note ?? '';
   return `<div class="themes" style="display:grid;gap:3px;margin:6px 0;max-width:340px">${CAT.themes.map(t => `<label class="rad"><input type="checkbox" data-regth="${v.id}:${t.id}" ${chosen.includes(t.id) ? 'checked' : ''}> <span>${esc(t.name)}</span></label>`).join('')}</div>
     <div class="acts"><button type="button" class="s" data-allth="regth:${v.id}">Mix of everything</button><button type="button" class="s" data-noneth="regth:${v.id}">Clear</button></div>
-    <input data-regsel="${v.id}:theme_note" value="${esc(note)}" maxlength="200" placeholder="or in your own words" aria-label="What he is thinking about, in your own words">`;
+    <input data-regsel="${v.id}:theme_note" value="${esc(note)}" maxlength="200" placeholder="or in your own words" aria-label="What he is thinking about, in your own words">
+    ${storyBox(v.id, r.story_mode ?? (v.story_mode != null ? !!v.story_mode : STORY.on), r.story_lpm ?? v.story_lpm ?? STORY.lpm, ['regstory', 'reglpm'])}`;
 }
 function thinkingBox(id, chosen, note, boxAttr, noteAttr) {
   return `<details class="thinking"${chosen.length || note ? ' open' : ''}><summary>What is he thinking about on quiet travel? (optional)</summary>
@@ -382,7 +389,7 @@ function thinkingBox(id, chosen, note, boxAttr, noteAttr) {
 }
 function chooser(v) {
   let sug = {}; try { sug = JSON.parse(v.suggestion || '{}'); } catch (_) {}
-  const c = CHOOSE[v.id] ||= { themes: DEFAULT_THEMES.slice(), theme_note: '', pack: sug.pack || 'western', personality: PERSONALITY,
+  const c = CHOOSE[v.id] ||= { themes: DEFAULT_THEMES.slice(), theme_note: '', story_mode: STORY.on, story_lpm: STORY.lpm, pack: sug.pack || 'western', personality: PERSONALITY,
     game: v.game || (sug.game && sug.game !== 'unknown' ? sug.game : '') };
   return `<div class="choose"><div class="small">Detected: <strong>${esc(sug.game || 'unknown')}</strong>${sug.confidence != null ? ` (${Math.round(sug.confidence*100)}% sure)` : ''}. ${esc(sug.reason || '')}</div>
     <div class="row"><div><label>Game</label><input data-ch="${v.id}:game" value="${esc(c.game)}"></div>
@@ -390,6 +397,7 @@ function chooser(v) {
     <div><label>Personality</label><select data-ch="${v.id}:personality">${opt(CAT.personalities, c.personality)}</select></div>
     <div><label>Character (optional)</label><input data-ch="${v.id}:character" value="${esc(c.character || '')}" placeholder="for example: John Marston" maxlength="60"></div></div>
     ${thinkingBox(v.id, c.themes || [], c.theme_note || '', 'chth', 'ch')}
+    ${storyBox(v.id, c.story_mode ?? STORY.on, c.story_lpm ?? STORY.lpm, ['chstory', 'chlpm'])}
     <div class="acts"><button class="s primary" data-startstyle="${v.id}">Start commentary</button><span class="small">The paid scan only begins when you press this.</span></div></div>`;
 }
 
@@ -410,7 +418,7 @@ function brainLine(v) {
   if (!v.stats || BUSYLIKE.includes(v.status)) return '';
   let st = {}; try { st = JSON.parse(v.stats); } catch (_) { return ''; }
   const r = v.density_rating;
-  return `<div class="prog">Found ${st.beats} emotional moments · ${st.gaps} usable gaps between speech (${st.micro_gaps} short) · ${st.planned} planned · ${st.lines} lines${st.silent ? ` (${st.lines - st.silent} spoken + ${st.silent} silent thoughts)` : ' spoken'}${st.filled ? ` (${st.filled} added by the self-check)` : ''}${st.lines < st.planned ? ` (${st.planned - st.lines} could not be written to fit)` : ''}${st.blocked_by_speech ? ` · ${st.blocked_by_speech} landed in speech` : ''}${st.knowledge ? ' · game knowledge on' : ''}${st.daydreams ? ` · ${st.daydreams} travel thought${st.daydreams > 1 ? 's' : ''}` : ''}${st.speech_reactions ? ` · ${st.speech_reactions} reaction${st.speech_reactions > 1 ? 's' : ''} to what people said` : ''}${st.intro || st.outro ? ` · ${[st.intro && 'welcome', st.outro && 'outro'].filter(Boolean).join(' + ')}` : ''}${st.cutscenes ? ` · ${st.cutscenes} cutscene${st.cutscenes > 1 ? 's' : ''} (${fmtT(st.cutscene_seconds)}) left untouched${st.reactions ? `, ${st.reactions} short reaction${st.reactions > 1 ? 's' : ''} after` : ''}` : ''}${st.calm ? ' · calm pace' : ''}${st.calm_skipped ? ` · calm pace skipped (${esc(st.calm_skipped)})` : ''}${st.target_lpm ? ` · you asked for ${st.target_lpm} a minute, got ${st.per_minute}, and this video has room for at most ${st.possible_per_minute}` : ''} · eagerness ${st.eagerness}${st.slider != null ? ` (your slider ${st.slider}${st.learned ? `, learned ${st.learned > 0 ? '+' : ''}${st.learned}` : ''}${st.arm === 'more' || st.arm === 'less' ? `, A/B test ${st.arm}` : ''})` : ''}</div>
+  return `<div class="prog">Found ${st.beats} emotional moments · ${st.gaps} usable gaps between speech (${st.micro_gaps} short) · ${st.planned} planned · ${st.lines} lines${st.silent ? ` (${st.lines - st.silent} spoken + ${st.silent} silent thoughts)` : ' spoken'}${st.filled ? ` (${st.filled} added by the self-check)` : ''}${st.lines < st.planned ? ` (${st.planned - st.lines} could not be written to fit)` : ''}${st.blocked_by_speech ? ` · ${st.blocked_by_speech} landed in speech` : ''}${st.knowledge ? ' · game knowledge on' : ''}${st.daydreams ? ` · ${st.daydreams} travel thought${st.daydreams > 1 ? 's' : ''}` : ''}${st.speech_reactions ? ` · ${st.speech_reactions} reaction${st.speech_reactions > 1 ? 's' : ''} to what people said` : ''}${st.intro || st.outro ? ` · ${[st.intro && 'welcome', st.outro && 'outro'].filter(Boolean).join(' + ')}` : ''}${st.cutscenes ? ` · ${st.cutscenes} cutscene${st.cutscenes > 1 ? 's' : ''} (${fmtT(st.cutscene_seconds)}) left untouched${st.reactions ? `, ${st.reactions} short reaction${st.reactions > 1 ? 's' : ''} after` : ''}` : ''}${st.story ? ` · inner story: ${st.story.thoughts} thought${st.story.thoughts === 1 ? '' : 's'} at ${st.story.lpm} a minute` : ''}${st.calm ? ' · calm pace' : ''}${st.calm_skipped ? ` · calm pace skipped (${esc(st.calm_skipped)})` : ''}${st.target_lpm ? ` · you asked for ${st.target_lpm} a minute, got ${st.per_minute}, and this video has room for at most ${st.possible_per_minute}` : ''} · eagerness ${st.eagerness}${st.slider != null ? ` (your slider ${st.slider}${st.learned ? `, learned ${st.learned > 0 ? '+' : ''}${st.learned}` : ''}${st.arm === 'more' || st.arm === 'less' ? `, A/B test ${st.arm}` : ''})` : ''}</div>
     <div class="acts"><span class="small">How was the amount of commentary?</span>
       <button class="s ${r===-1?'primary':''}" data-dens="${v.id}:-1">Too quiet</button>
       <button class="s ${r===0?'primary':''}" data-dens="${v.id}:0">Just right</button>
@@ -492,7 +500,7 @@ async function load() {
     ready = true;
     $('folder').value = s.folder_id;
     for (const k of ['game','persona','character','story_point','voice_notes']) $(k).value = s.options[k] || '';
-    CAT = { packs: s.packs, personalities: s.personalities, themes: s.think_themes }; DEFAULT_THEMES = s.default_themes || []; renderFavThemes(); PERSONALITY = s.personality;
+    CAT = { packs: s.packs, personalities: s.personalities, themes: s.think_themes }; DEFAULT_THEMES = s.default_themes || []; STORY = { on: s.story_mode, lpm: s.story_lpm }; renderFavThemes(); PERSONALITY = s.personality;
     $('personality').innerHTML = opt(CAT.personalities, s.personality);
     $('vpack').innerHTML = opt(CAT.packs, 'western'); loadVoices();
     setAmount(s.amount); $('yt').checked = s.youtube_publish; $('learn').checked = s.learn; $('ask').checked = s.ask_style; $('ab').checked = s.ab_test; fillCaptions(s); fillChannel(s); $('cutq').checked = s.cutscene_quiet; $('onev').checked = s.one_voice; ONEVOICE = s.one_voice; markOneVoice(); $('cap_com').checked = s.cap_commentary; $('cap_dlg').checked = s.cap_dialogue;
@@ -645,7 +653,7 @@ document.querySelectorAll('[data-cap]').forEach(el => el.onchange = async () => 
 $('cprevkind').onchange = refreshPreview;
 saveSetting('dayd', 'daydream', () => $('dayd').checked); saveSetting('tlpm', 'travel_lpm', () => +$('tlpm').value || 0); saveSetting('know', 'knowledge_on', () => $('know').checked);
 saveSetting('moral', 'moral_mode', () => $('moral').value); saveSetting('chname', 'channel_name', () => $('chname').value);
-saveSetting('amb_on', 'ambience_on', () => $('amb_on').checked); saveSetting('calm_on', 'calm_mode', () => $('calm_on').checked);
+saveSetting('amb_on', 'ambience_on', () => $('amb_on').checked); saveSetting('calm_on', 'calm_mode', () => $('calm_on').checked); saveSetting('story_on', 'story_mode', () => $('story_on').checked); saveSetting('story_lpm', 'story_lpm', () => +$('story_lpm').value || 6);
 function showOwnMusic(s) { $('ownmusic').hidden = $('music_mode').value !== 'own'; $('ownmusic_name').textContent = s && s.own_music ? 'Current track: ' + s.own_music : 'No track yet.'; $('ownmusic_remove').hidden = !(s && s.own_music); }
 $('music_mode').onchange = async () => { try { await api('settings', { music_mode: $('music_mode').value }); say('Saved. It applies to new videos and to Rebuild video.'); const s = await api('state'); showOwnMusic(s); } catch (e) { say(e.message, true); } };
 $('ownmusic_file').onchange = e => { const f = e.target.files[0]; if (!f) return; const x = new XMLHttpRequest(); x.open('POST', '/api/music?name=' + encodeURIComponent(f.name));
@@ -680,6 +688,10 @@ document.addEventListener('change', async e => {
     if (d.regsel) { const [id, f] = d.regsel.split(':'); (REGEN[id] ||= {})[f] = e.target.value; }
     if (d.fav) { const cur = new Set(DEFAULT_THEMES); e.target.checked ? cur.add(d.fav) : cur.delete(d.fav); const ids = CAT.themes.map(t => t.id).filter(i => cur.has(i));
       try { await api('settings', { default_themes: ids }); DEFAULT_THEMES = ids; say('Saved: new videos start with these themes ticked.'); } catch (err) { say(err.message, true); } }
+    if (d.regstory) { (REGEN[d.regstory] ||= {}).story_mode = e.target.checked; }
+    if (d.reglpm) { (REGEN[d.reglpm] ||= {}).story_lpm = +e.target.value; }
+    if (d.chstory) { (CHOOSE[d.chstory] ||= {}).story_mode = e.target.checked; }
+    if (d.chlpm) { (CHOOSE[d.chlpm] ||= {}).story_lpm = +e.target.value; }
     if (d.regth) { const [id, tid] = d.regth.split(':'); const v = VIDEOS.find(x => x.id == id) || {}; let mine = DEFAULT_THEMES; if (v.themes != null) { try { mine = JSON.parse(v.themes); } catch (_) {} }
       const cur = new Set((REGEN[id] ||= {}).themes ?? mine); e.target.checked ? cur.add(tid) : cur.delete(tid); REGEN[id].themes = [...cur]; }
     if (d.chth) { const [id, tid] = d.chth.split(':'); const c = (CHOOSE[id] ||= {}); const cur = new Set(c.themes || []); e.target.checked ? cur.add(tid) : cur.delete(tid); c.themes = [...cur]; }
@@ -717,9 +729,9 @@ document.addEventListener('click', async e => {
     if (d.lines) { const id = +d.lines; OPEN.has(id) ? OPEN.delete(id) : OPEN.add(id); if (OPEN.has(id)) showLines(id); else $('l'+id).innerHTML=''; }
     if (d.approve && confirm('Make this video public on YouTube?')) { await api(`videos/${d.approve}/approve`, {}); say('Published.'); await refresh(); }
     if (d.retry) { await api(`videos/${d.retry}/retry`, {}); await refresh(); }
-    if (d.regen) { const r = REGEN[d.regen] || {}, b = {}; if (r.amount) b.amount = +r.amount; if (r.pack) b.pack = r.pack; if (r.personality) b.personality = r.personality; if (r.character !== undefined) b.character = r.character; if (r.themes !== undefined) b.themes = r.themes; if (r.theme_note !== undefined) b.theme_note = r.theme_note;
+    if (d.regen) { const r = REGEN[d.regen] || {}, b = {}; if (r.amount) b.amount = +r.amount; if (r.pack) b.pack = r.pack; if (r.personality) b.personality = r.personality; if (r.character !== undefined) b.character = r.character; if (r.themes !== undefined) b.themes = r.themes; if (r.theme_note !== undefined) b.theme_note = r.theme_note; if (r.story_mode !== undefined) b.story_mode = r.story_mode; if (r.story_lpm !== undefined) b.story_lpm = r.story_lpm;
       await api(`videos/${d.regen}/regenerate`, b); say('Regenerating the commentary from the saved scan...'); await refresh(); }
-    if (d.startstyle) { const c = CHOOSE[d.startstyle]; await api(`videos/${d.startstyle}/start`, { pack: c.pack, personality: c.personality, game: c.game, character: c.character || '', themes: c.themes || [], theme_note: c.theme_note || '' }); delete CHOOSE[d.startstyle]; say('Started.'); await refresh(); }
+    if (d.startstyle) { const c = CHOOSE[d.startstyle]; await api(`videos/${d.startstyle}/start`, { pack: c.pack, personality: c.personality, game: c.game, character: c.character || '', themes: c.themes || [], theme_note: c.theme_note || '', story_mode: !!c.story_mode, story_lpm: +c.story_lpm || undefined }); delete CHOOSE[d.startstyle]; say('Started.'); await refresh(); }
     if (d.dens) { const [id, val] = d.dens.split(':'); await api(`videos/${id}/density`, { value: +val }); say('Thanks. The brain adjusts how eager it is for this genre style.'); await refresh(); }
     if (d.changevoices) { $('vpack').value = d.changevoices; await loadVoices(); $('vpack').scrollIntoView({ behavior: 'smooth', block: 'center' }); say('Choose the voices for this style, then press Rebuild video.'); }
     if (d.fixstyle) { const [id, pk] = d.fixstyle.split(':'); await api(`videos/${id}/regenerate`, { pack: pk }); say('Regenerating in the right style...'); await refresh(); }

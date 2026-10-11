@@ -15,7 +15,7 @@ PERSONA_RULE = {
 def build_system(style, opts):
     tpl = (PROMPTS / "master.md").read_text()
     pack_text, personality_text = styles.pack_prompt(opts.get("pack"), opts.get("personality"))
-    return (tpl.replace("{GUARDRAILS}", (PROMPTS / "guardrails.md").read_text())
+    text = (tpl.replace("{GUARDRAILS}", (PROMPTS / "guardrails.md").read_text())
             .replace("{GENRE_PACK}", pack_text)
             .replace("{PERSONALITY}", personality_text)
             .replace("{KNOWLEDGE}", knowledge.for_game(opts.get("game")) if opts.get("knowledge", True) else "")
@@ -25,6 +25,9 @@ def build_system(style, opts):
             .replace("{CHARACTER}", opts.get("character") or "the protagonist")
             .replace("{STORY_POINT}", opts.get("story_point") or "unspecified, avoid spoilers")
             .replace("{VOICE_NOTES}", opts.get("voice_notes") or "natural"))
+    if opts.get("story_mode"):             # inner story only: one running thought, after the locked rules
+        text += "\n\n" + (PROMPTS / "story.md").read_text()
+    return text
 
 
 def _earlier_events(scenes, lo, limit=25):

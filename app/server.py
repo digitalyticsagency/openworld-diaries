@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from . import ambience, analytics, thinking, captions, comments, trends, cutscenes, db, envfile, evolve, google_auth, knowledge, pipeline, series, sources, styles, voices
+from . import ambience, analytics, storymode, thinking, captions, comments, trends, cutscenes, db, envfile, evolve, google_auth, knowledge, pipeline, series, sources, styles, voices
 from . import channel as channel_lines
 from . import voice as voice_mod
 from .config import POLL_SECONDS
@@ -154,6 +154,8 @@ class Settings(BaseModel):
     hook_on: bool | None = None
     series_on: bool | None = None
     default_themes: list[str] | None = None
+    story_mode: bool | None = None
+    story_lpm: float | None = None
     ambience_on: bool | None = None
     music_mode: str | None = None
     calm_mode: bool | None = None
@@ -193,6 +195,8 @@ class Regen(BaseModel):
     character: str | None = None
     themes: list[str] | None = None
     theme_note: str | None = None
+    story_mode: bool | None = None
+    story_lpm: float | None = None
 
 
 class KeyValue(BaseModel):
@@ -215,6 +219,8 @@ class Start(BaseModel):
     character: str | None = None
     themes: list[str] | None = None
     theme_note: str | None = None
+    story_mode: bool | None = None
+    story_lpm: float | None = None
 
 
 class Assign(BaseModel):
@@ -280,6 +286,7 @@ def state():
         "calm_mode": pipeline.calm_on(),
         "ambience_on": pipeline.ambience_on(), "game_audio": int(round(pipeline.game_audio_level() * 100)),
         "think_themes": thinking.catalog(), "default_themes": thinking.defaults(),
+        "story_mode": db.get("story_mode", "0") == "1", "story_lpm": storymode.clamp_lpm(db.get("story_lpm") or storymode.DEFAULT_LPM),
         "series_on": series.enabled(), "series_name": series.name(),
         "moral_mode": pipeline.moral_mode(),
         "knowledge_on": db.get("knowledge_on", "1") == "1",
@@ -298,7 +305,7 @@ def state():
         "learn": db.get("learn", "1") == "1",
         "videos": [_video_view(v) for v in db.rows(
             "SELECT id,name,status,error,self_score,combined_score,yt_video_id,pack,personality,game,suggestion,cutscenes,"
-            "status_at,started_at,progress,density_rating,stats,arm,episode,character,themes,theme_note "
+            "status_at,started_at,progress,density_rating,stats,arm,episode,character,themes,theme_note,story_mode,story_lpm "
             "FROM videos ORDER BY id DESC LIMIT 50")],
         "brain": {"bias": {p: evolve.density_bias(p) for p in styles.PACKS if evolve.density_bias(p)},
                   "kind_weights": evolve.kind_weights()},
@@ -416,8 +423,10 @@ def settings(s: Settings):
         elif k == "personality":
             v = styles.personality_id(v)
         elif k in ("youtube_publish", "learn", "ask_style", "ab_test", "cap_commentary", "cap_dialogue", "cutscene_quiet", "one_voice",
-                    "daydream", "intro_on", "outro_on", "catch_on", "knowledge_on", "hook_on", "cliff_on", "series_on", "ambience_on", "calm_mode"):
+                    "daydream", "intro_on", "outro_on", "catch_on", "knowledge_on", "hook_on", "cliff_on", "series_on", "ambience_on", "calm_mode", "story_mode"):
             v = "1" if v else "0"
+        elif k == "story_lpm":
+            v = storymode.clamp_lpm(v)
         elif k == "default_themes":
             v = json.dumps(thinking.clean_ids(v))
         elif k == "music_mode":
@@ -662,7 +671,7 @@ def regenerate(vid: int, r: Regen):
     if not (pipeline.workdir(vid) / "scenes.json").exists():
         raise HTTPException(400, "The saved scan is missing; use Retry to process it again.")
     pipeline.set_status(vid, "writing")
-    run_bg(pipeline.regenerate, vid, r.amount, r.persona, r.pack, r.personality, r.game, r.character, r.themes, r.theme_note)
+    run_bg(pipeline.regenerate, vid, r.amount, r.persona, r.pack, r.personality, r.game, r.character, r.themes, r.theme_note, r.story_mode, r.story_lpm)
     return {"ok": True}
 
 
@@ -806,7 +815,7 @@ def start_video(vid: int, s: Start):
     v = idle_video(vid)
     if v["status"] != "choose_style":
         raise HTTPException(400, "This video is not waiting for a style.")
-    pipeline.start(vid, s.pack, s.personality, s.game, s.character, s.themes, s.theme_note)
+    pipeline.start(vid, s.pack, s.personality, s.game, s.character, s.themes, s.theme_note, s.story_mode, s.story_lpm)
     pipeline.set_status(vid, "queued")
     run_bg(pipeline.process, vid)
     return {"ok": True}

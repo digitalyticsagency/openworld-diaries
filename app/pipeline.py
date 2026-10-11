@@ -8,7 +8,7 @@ from pathlib import Path
 from . import (beats, captions, channel, cutscenes, db, detect, evolve, gaps, guard, memory, publisher, scenes, sentiment,
                sources, styles, transcript, travel, voice, writer)
 from . import report as brain_report
-from . import ambience, thinking, clips as clipmod
+from . import ambience, storymode, thinking, clips as clipmod
 from . import knowledge
 from . import packaging, series, thumbnail, viral
 from .config import DATA, MIN_GAP_FLOOR, TRAVEL_GAP_DEFAULT, TRAVEL_GAP_MIN
@@ -60,7 +60,7 @@ def daydream_on():
     return db.get("daydream", "1") == "1"
 
 
-def start(vid, pack, personality, game, character=None, themes=None, theme_note=None):
+def start(vid, pack, personality, game, character=None, themes=None, theme_note=None, story_mode=None, story_lpm=None):
     """The user confirmed (or changed) the style: save it and let processing continue. A character, when given,
     is used for this one video; an empty one clears it."""
     db.run("UPDATE videos SET pack=?, personality=?, game=? WHERE id=?",
@@ -71,6 +71,10 @@ def start(vid, pack, personality, game, character=None, themes=None, theme_note=
         db.run("UPDATE videos SET themes=? WHERE id=?", (json.dumps(thinking.clean_ids(themes)), vid))
     if theme_note is not None:
         db.run("UPDATE videos SET theme_note=? WHERE id=?", (thinking.clean_note(theme_note) or None, vid))
+    if story_mode is not None:       # inner story only (True), the normal commentary (False); the video's own choice beats the default
+        db.run("UPDATE videos SET story_mode=? WHERE id=?", (1 if story_mode else 0, vid))
+    if story_lpm is not None:
+        db.run("UPDATE videos SET story_lpm=? WHERE id=?", (storymode.clamp_lpm(story_lpm), vid))
 
 
 def amount():
@@ -189,6 +193,14 @@ def calm_fits(all_beats, length):
     be starved of commentary by it, so there the normal pace is used even when the switch is on."""
     per_min = len([b for b in all_beats if not any(k.startswith("npc_") for k in b["kinds"])]) / max(length / 60.0, 0.5)
     return per_min <= CALM_MAX_MOMENTS_PER_MIN, round(per_min, 1)
+
+
+def story_for(v):
+    """(inner story on?, lines a minute) for one video: its own choice if it has one, else the default in settings."""
+    on = v.get("story_mode")
+    on = (db.get("story_mode", "0") == "1") if on is None else bool(on)
+    lpm = v.get("story_lpm") or db.get("story_lpm") or storymode.DEFAULT_LPM
+    return on, storymode.clamp_lpm(lpm)
 
 
 def calm_active():
@@ -437,10 +449,13 @@ def process(vid):
     _guarded(vid, run)
 
 
-def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=None, character=None, themes=None, theme_note=None):
-    if pack or personality or game or character is not None or themes is not None or theme_note is not None:
+def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=None, character=None, themes=None, theme_note=None,
+              story_mode=None, story_lpm=None):
+    if pack or personality or game or character is not None or themes is not None or theme_note is not None \
+            or story_mode is not None or story_lpm is not None:
         cur = db.one("SELECT * FROM videos WHERE id=?", (vid,))
-        start(vid, pack or cur["pack"], personality or cur["personality"], game or cur["game"], character, themes, theme_note)
+        start(vid, pack or cur["pack"], personality or cur["personality"], game or cur["game"], character, themes, theme_note,
+              story_mode, story_lpm)
     v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
     work = workdir(vid)
     src = work / "source.mp4"
@@ -480,6 +495,10 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     cliffs = viral.cliffhangers(all_beats, notes, free, length) if cfg["cliff_on"] else []
     anchor = (intro["t"] + min(intro["max_duration"], 10.0) if intro else after_hook) + 3.0      # the welcome is a sentence or two, not the whole gap
     recap = series.recap_opportunity(free, anchor, series.previous(vid))
+    story_on, story_lpm = story_for(v)
+    if story_on:             # inner story only: no teaser, no suspense, no recap, no reactions; the welcome and the outro stay
+        hook = recap = None
+        cliffs, after = [], []
     extra = after + [o for o in (hook, intro, recap, outro) if o] + cliffs
     quiet_fn = beats.travel_quiet_fn(notes) if daydream_on() else (lambda t: False)
     arm, offset = evolve.choose_arm(explicit)
@@ -489,15 +508,22 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     calm_here = calm_active() and quiet_enough      # the calm pace only where little happens
     if calm_here:
         eager = min(eager, CALM_EAGER)      # a calm free-roam video: only the strongest moments, long quiet stretches
-    chosen, blocked, possible = plan_commentary(all_beats, free, cutscenes.subtract_ranges(speech, blocks), length,
-                                                eager, target_lpm(), cap_commentary(), extra=extra, quiet_fn=quiet_fn,
-                                                travel_gap=travel_gap(calm_here))
     chosen_themes = thinking.for_video(v)
-    travel_kinds = travel.assign(chosen, notes, channel.themes_for(opts["character"]),
-                                 reflect=thinking.prompts(chosen_themes) or None, note=thinking.clean_note(v.get("theme_note")) if chosen_themes else "")
-    n_catch = channel.assign_catchphrases(chosen, cfg["phrases"], length, vid) if cfg["catch_on"] else 0
+    if story_on:
+        story = storymode.plan(notes, free, length, story_lpm, chosen_themes, v.get("theme_note") if chosen_themes else "")
+        chosen = beats._fit_to_neighbours(sorted(story + [o for o in (intro, outro) if o], key=lambda o: o["t"]))
+        blocked, possible, travel_kinds = [], len(story), {"story": len(story)}
+        n_catch = 0
+    else:
+        chosen, blocked, possible = plan_commentary(all_beats, free, cutscenes.subtract_ranges(speech, blocks), length,
+                                                    eager, target_lpm(), cap_commentary(), extra=extra, quiet_fn=quiet_fn,
+                                                    travel_gap=travel_gap(calm_here))
+        travel_kinds = travel.assign(chosen, notes, channel.themes_for(opts["character"]),
+                                     reflect=thinking.prompts(chosen_themes) or None, note=thinking.clean_note(v.get("theme_note")) if chosen_themes else "")
+        n_catch = channel.assign_catchphrases(chosen, cfg["phrases"], length, vid) if cfg["catch_on"] else 0
     db.run("UPDATE videos SET arm=? WHERE id=?", (arm, vid))
 
+    opts["story_mode"] = story_on
     system = writer.build_system(_style(v)["text"], opts)
     profile = memory.profile()
     lines, dropped = writer.write_lines(notes, segs, windows, system, length, chosen, profile=profile,
@@ -518,6 +544,7 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
         "micro_gaps": sum(1 for g in free if g["kind"] == "micro"), "planned": len(chosen),
         "lines": len(lines), "filled": filled, "eagerness": round(eager, 1), "arm": arm,
         "slider": amt, "learned": learned, "calm": calm_here, "calm_overridden": calm_on() and not calm_active(), "moments_per_min": per_min,
+        "story": {"on": story_on, "lpm": story_lpm, "thoughts": sum(1 for l in lines if "travel_story" in (l.get("beat_kinds") or ""))} if story_on else None,
         "calm_skipped": (f"{per_min} moments a minute is too busy for the calm pace") if calm_active() and not quiet_enough else None,
         "silent": sum(1 for l in lines if l.get("silent")), "target_lpm": target_lpm(),
         "per_minute": round(len(lines) / (length / 60), 1), "possible_per_minute": possible,
@@ -693,9 +720,10 @@ def recaption(vid):
     _guarded(vid, run)
 
 
-def regenerate(vid, amt=None, persona=None, pack=None, personality=None, game=None, character=None, themes=None, theme_note=None):
+def regenerate(vid, amt=None, persona=None, pack=None, personality=None, game=None, character=None, themes=None, theme_note=None,
+               story_mode=None, story_lpm=None):
     """New commentary from the saved scan: no Gemini calls, no re-download."""
-    _guarded(vid, lambda: _generate(vid, amt, persona, pack, personality, game, character, themes, theme_note))
+    _guarded(vid, lambda: _generate(vid, amt, persona, pack, personality, game, character, themes, theme_note, story_mode, story_lpm))
 
 
 def rerender(vid):

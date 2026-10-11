@@ -120,6 +120,13 @@ Only the quiet thoughts while riding or walking follow it: every other one becom
 - **The closing line is never lost for want of a gap.** A video with no speech is one long gap; the outro now goes near its end instead of being skipped. When no gap has room for a sentence, a very short "Like and subscribe." is used.
 - **No invented time.** A line that claims this ride has gone on for hours ("an hour ago", "been riding for hours", "since this morning") in a video that is minutes long is dropped, and the writer is told not to. Idioms and memories ("I could do this all day", "for years") are left alone, and very long recordings are not judged.
 
+## Inner story only
+For a video that is only a mind wandering while he rides, walks or runs. Turn on **Inner story only** when you confirm a video's style, in the "Thinking about..." menu next to Regenerate, or as the default in Pacing, and set the **lines a minute** (1.5 to 10; 6 is a line every 10 seconds).
+- **One running thread.** Lines come at a steady pace through the travel stretches, in short threads of four on your thinking themes (all eight if you ticked none): each line picks up from the last, takes one small step (a doubt, a memory, a hope), and a new thread begins every fourth line. Your own-words note opens a thread as a feeling, never a fact.
+- **Scenery is only a trigger.** On about one thought in three, a passing sight from the scan may start the thought, but the writer is told never to describe it. Most thoughts have no scenery at all.
+- **Everything else is silent.** No lines in fights, shops, conversations, hunting, camp, or while aiming. After one of those ends, the story waits about 2.5 seconds, and it stops a second before the next. No teaser, suspense line, recap or reactions to what people said. The welcome and the outro stay (turn them off in Channel lines if you do not want them).
+- It never speaks over in-game speech or a cutscene, no real character's name is ever used, and the story rules are added after the locked ones, never instead of them. The video's stats show "inner story: N thoughts at X a minute".
+
 ## Caption looks
 
 Dialogue subtitles and the inner voice each have their own style and position, chosen in Voice with a live preview on a frame of your own video.
