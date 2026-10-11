@@ -97,8 +97,8 @@ def _ask(system, opps, scenes, segments, windows, kept, profile, lo, hi, note=""
 
 def _shorten(system, dropped, opps_by_id):
     """A line that was only too long is not lost: ask for the same thought in fewer words."""
-    items = [{"opportunity": d["opp_id"], "max_words": d["max_words"], "line": d["line"]}
-             for d in dropped if d.get("reason") == "too long" and d.get("opp_id") in opps_by_id]
+    items = [{"opportunity": d["opp_id"], "max_words": min(d["max_words"], max(3, int((d.get("max_duration") or 99) * 2.2))), "line": d["line"]}
+             for d in dropped if d.get("reason") in ("too long", "no room before speech") and d.get("opp_id") in opps_by_id]
     if not items:
         return []
     try:
@@ -134,7 +134,7 @@ def write_lines(scenes, segments, windows, system, video_len, opps, profile=None
             fixed = _shorten(system, d, {o["id"]: o for o in sel})
             if fixed:
                 k, d2 = guard.enforce(k + fixed, windows, scenes, min_gap=MIN_GAP_FLOOR, blocks=blocks)
-                d = [x for x in d if x.get("reason") != "too long"] + d2
+                d = [x for x in d if x.get("reason") not in ("too long", "no room before speech")] + d2
             fresh, repeats = guard.dedupe([x for x in k if x["start"] >= lo], kept)
             kept += fresh
             dropped += [x for x in d if x["start"] >= lo] + repeats

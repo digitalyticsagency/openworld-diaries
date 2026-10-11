@@ -97,9 +97,12 @@ def callback_ok(line, scenes):
 
 GREETING = re.compile(r"\b(welcome to|welcome back|hello everyone|hi everyone|hey everyone|hey guys|howdy folks|howdy everyone|"
                       r"like and subscribe|subscribe|smash that)\b", re.I)
-CANON = re.compile(r"\b(mary|eliza|isaac|dutch|hosea|john|abigail|jack|sadie|micah|javier|bill|karen|tilly|charles|molly|uncle|"
-                   r"pearson|strauss|sean|lenny|trelawny|kieran|susan|leopold|annabelle|"
-                   r"franklin|trevor|lamar|lester|amanda|tracey|devin|simeon|lucia|jason|marston|morgan|williamson|ross)\b", re.I)
+CANON_NAMES = ("mary eliza isaac dutch hosea john abigail jack sadie micah javier bill karen tilly charles molly pearson strauss sean lenny "
+               "trelawny kieran susan leopold annabelle franklin trevor lamar lester amanda tracey devin simeon lucia jason marston morgan "
+               "williamson ross").split()
+# Names are matched as names: capitalised, whole words. "my uncle", "the bill", "a jack" and "a ross of..." are ordinary words and
+# must not be blocked (a plain story about an uncle and a bill is not a story about a game character).
+CANON = re.compile(r"\b(?:" + "|".join(n.capitalize() for n in CANON_NAMES) + r")\b")
 
 
 CLICKBAIT = re.compile(r"(you won'?t believe|shocking|mind[- ]?blow|never seen anything like|changed everything|nobody expected|"

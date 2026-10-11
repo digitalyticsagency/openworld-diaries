@@ -372,3 +372,41 @@ class PageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NamesAndSlotsTests(unittest.TestCase):
+    """Video 8's story lost four of its ten lines: 'my uncle' was taken for a game character, and one line overran its slot."""
+
+    def test_ordinary_words_are_not_game_characters(self):
+        for text in ("I came to my uncle's landing in March.", "Same week, my uncle split his palm on frayed cable.", "He paid the bill and left.",
+                     "He was a jack of all trades.", "My mother took in boarders.", "We crossed at the ford where the sign said Ross Ferry."[:30]):
+            self.assertIsNone(guard.CANON.search(text), text)
+
+    def test_names_of_game_characters_are_still_caught(self):
+        for text in ("Someday I'll sit with Mary on a porch.", "Maybe Dutch was right.", "John would have laughed.", "Then Arthur Morgan rode off.",
+                     "Franklin never asked.", "Said Marston to the preacher."):
+            self.assertTrue(guard.CANON.search(text), text)
+
+    def judge(self, text):
+        ln = {"start": 20.0, "line": text, "persona": "character", "emotion": "calm", "max_words": 22, "max_duration": 12.0, "opp_id": "s0_0",
+              "beat_kinds": "daydream,travel_story,story_told", "silent": False, "daydream": True}
+        keep, drop = guard.enforce([ln], [], ride(120), min_gap=2.5)
+        return None if keep else drop[0]["reason"]
+
+    def test_a_plain_story_about_an_uncle_passes_the_name_check(self):
+        self.assertIsNone(self.judge("I came to my uncle's landing in March with one bag and a pair of boots a size too big."))
+        self.assertEqual(self.judge("I came to Dutch's landing in March with one bag and a pair of boots a size too big."), "daydream names a real character")
+
+    def test_a_line_that_overruns_its_slot_is_asked_for_again_shorter_instead_of_being_lost(self):
+        from app import writer
+        slot = {"id": "s2_0", "t": 20.0, "beat_t": None, "salience": 4.6, "kinds": ["daydream", "travel_story", "story_told"], "kind": "daydream",
+                "why": "x", "max_words": 18, "max_duration": 4.0, "passage": 2}
+        long_line = "So I pulled the crossing mostly by myself that spring, while he sat on an upturned bucket nursing that hand."
+        short_line = "I pulled the crossing alone that spring while he nursed his hand."
+        dropped = [{"opp_id": "s2_0", "start": 20.0, "line": long_line, "max_words": 18, "max_duration": 4.0, "reason": "no room before speech",
+                    "persona": "character", "emotion": "calm", "beat_kinds": "daydream,travel_story,story_told", "silent": False}]
+        with mock.patch("app.writer.claude", return_value=json.dumps([{"opportunity": "s2_0", "line": short_line}])) as c:
+            fixed = writer._shorten("sys", dropped, {"s2_0": slot})
+        self.assertEqual(fixed[0]["line"], short_line)
+        sent = c.call_args.args[1]
+        self.assertIn('"max_words": 8', sent)                                                    # a four-second slot, not the eighteen words it was given
