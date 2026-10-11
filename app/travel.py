@@ -11,6 +11,7 @@ The facts come only from the scan, so a thought can never invent one. Pure funct
 from .channel import THEMES
 
 ORDER = ["notice", "goal", "mood", "horse", "memory", "wistful"]
+THEMED_ORDER = ["wistful", "notice", "wistful", "mood", "wistful", "goal", "horse", "wistful", "memory"]    # with chosen themes, every other thought reflects
 NEAR = 7.0            # a notice or horse fact must be within this many seconds of the thought
 RECENT = 90.0         # events this recent colour the mood
 MEMORY_MIN_AGE = 45.0
@@ -111,9 +112,13 @@ def memory_event(scenes, t, used):
     return (best[1], best[2]) if best else None
 
 
-def assign(chosen, scenes, themes=None):
-    """Give every quiet-travel thought a kind and the real facts behind it. Rewrites the opportunity's why."""
+def assign(chosen, scenes, themes=None, reflect=None, note=""):
+    """Give every quiet-travel thought a kind and the real facts behind it. Rewrites the opportunity's why.
+    reflect: [(theme name, line)] when the owner chose what the player is thinking about: then every other thought is a
+    reflection on those themes, and the rest stay grounded in what the scan shows. note: the owner's own short note."""
     themes = themes or THEMES
+    order = THEMED_ORDER if reflect else ORDER
+    pos, refl_n = 0, 0
     spots = sorted((o for o in chosen if o.get("kind") == "daydream"), key=lambda o: o["t"])
     last, theme_n, used_mem, counts = None, 0, set(), {}
     for o in spots:
@@ -121,8 +126,11 @@ def assign(chosen, scenes, themes=None):
         facts, horse = notice_facts(scenes, t), horse_facts(scenes, t)
         mem = memory_event(scenes, t, used_mem)
         ready = {"notice": bool(facts), "goal": bool(facts), "mood": True, "horse": bool(horse), "memory": bool(mem), "wistful": True}
-        start = (ORDER.index(last) + 1) % len(ORDER) if last else 0
-        kind = next(ORDER[(start + k) % len(ORDER)] for k in range(len(ORDER)) if ready[ORDER[(start + k) % len(ORDER)]])
+        for k in range(len(order)):
+            cand = order[(pos + k) % len(order)]
+            if ready[cand] and cand != last:
+                kind, pos = cand, (pos + k + 1) % len(order)
+                break
         if kind == "notice":
             why = ("Quiet travel. Notice something that is really there and let it become a small private thought. "
                    "What the scan saw: " + "; ".join(facts) + ". Mention only these.")
@@ -142,6 +150,13 @@ def assign(chosen, scenes, themes=None):
             o["memory_t"] = mem[0]
             why = (f"Quiet travel. His mind drifts back to something earlier in this same video: {mem[1]}. "
                    f"One short private thought about it, and put {mem[0]} in callback_t.")
+        elif reflect:
+            label, line = reflect[refl_n % len(reflect)]
+            refl_n += 1
+            why = (f"Quiet travel: nothing is happening and nobody is near. He is thinking about {label.lower()}: {line}. "
+                   "One short private thought. Keep it generic: never name a real character and never state a story fact."
+                   + (f" The owner also asked for these thoughts to touch on: \"{note}\". Treat that as a feeling to colour the thought, "
+                      "never as a fact, and never name anyone." if note else ""))
         else:
             why = ("Quiet travel: nothing is happening and nobody is near. A wistful private thought about a quiet future. "
                    f"Keep it generic and never name a real character. Theme for this one: {themes[theme_n % len(themes)]}.")

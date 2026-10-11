@@ -110,6 +110,11 @@ For people who make a lot of free-roam videos.
   - *Replace it with my own music:* upload one track (at least 5 seconds). It is levelled, looped under the whole video, and dips under the voice. The game audio is again kept only for speech and cutscenes.
   - When there is nothing to replace the music with (no ambience for the game, no track uploaded, or a bed that could not be made), the music is lowered instead and the Brain report says so. It is never left silent.
 
+## What he is thinking about
+When you confirm a video's style (next to Character), **What is he thinking about on quiet travel?** lets you tick any of eight themes: family and home, friends and loneliness, future and dreams, past and regrets, fear and doubt, gratitude and small joys, faith, luck and meaning, work, money and survival. You can add a note in your own words ("missing his brother"). After a video is made, **Thinking about...** next to Regenerate changes it for that video.
+
+Only the quiet thoughts while riding or walking follow it: every other one becomes a reflection on your themes (one theme after another, line by line), and the rest stay grounded in what the scan shows. Reactions to fights, shops, animals and speech are untouched. Every reflection is generic (no real character's name, no story fact), your note is treated as a feeling to colour the thought and never as a fact, and the choice belongs to that one video.
+
 ## Caption looks
 
 Dialogue subtitles and the inner voice each have their own style and position, chosen in Voice with a live preview on a frame of your own video.

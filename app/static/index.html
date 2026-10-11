@@ -351,22 +351,36 @@ function refreshPreview() {
   }, 120);
 }
 function markOneVoice() { for (const p of ['player', 'companion']) { const sel = $('v_' + p); if (sel) sel.disabled = ONEVOICE; sel && (sel.title = ONEVOICE ? 'Not used while one consistent voice is on' : ''); } }
-let CAT = {packs: [], personalities: []}, PERSONALITY = 'balanced', VOICES = [], VIDEOS = [];
+let CAT = {packs: [], personalities: [], themes: []}, PERSONALITY = 'balanced', VOICES = [], VIDEOS = [];
 const vname = id => (VOICES.find(v => v.id === id) || {}).name || 'a voice';
 const CHOOSE = {};
 const opt = (list, sel) => list.map(x => `<option value="${x.id}" ${x.id===sel?'selected':''}>${esc(x.name)}</option>`).join('');
 const packName = id => (CAT.packs.find(p => p.id === id) || {}).name || 'Western outlaw';
 const persName = id => (CAT.personalities.find(p => p.id === id) || {}).name || 'Balanced';
 
+function thinkingBoxInner(v) {
+  let mine = []; try { mine = JSON.parse(v.themes || '[]'); } catch (_) {}
+  const r = REGEN[v.id] || {}, chosen = r.themes ?? mine, note = r.theme_note ?? v.theme_note ?? '';
+  return `<div class="themes" style="display:grid;gap:3px;margin:6px 0;max-width:340px">${CAT.themes.map(t => `<label class="rad"><input type="checkbox" data-regth="${v.id}:${t.id}" ${chosen.includes(t.id) ? 'checked' : ''}> <span>${esc(t.name)}</span></label>`).join('')}</div>
+    <input data-regsel="${v.id}:theme_note" value="${esc(note)}" maxlength="200" placeholder="or in your own words" aria-label="What he is thinking about, in your own words">`;
+}
+function thinkingBox(id, chosen, note, boxAttr, noteAttr) {
+  return `<details class="thinking"${chosen.length || note ? ' open' : ''}><summary>What is he thinking about on quiet travel? (optional)</summary>
+    <div class="small">Pick as many as you like. Only the quiet thoughts while riding or walking follow this; reactions to fights, shops and animals stay about what happens.</div>
+    <div class="themes" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:4px 14px;margin:6px 0">${CAT.themes.map(t => `<label class="rad"><input type="checkbox" data-${boxAttr}="${id}:${t.id}" ${chosen.includes(t.id) ? 'checked' : ''}> <span>${esc(t.name)}</span></label>`).join('')}</div>
+    <label>Or in your own words (a feeling, never a fact)</label><input data-${noteAttr}="${id}:theme_note" value="${esc(note)}" maxlength="200" placeholder="for example: missing his brother, wondering about a quiet life">
+  </details>`;
+}
 function chooser(v) {
   let sug = {}; try { sug = JSON.parse(v.suggestion || '{}'); } catch (_) {}
-  const c = CHOOSE[v.id] ||= { pack: sug.pack || 'western', personality: PERSONALITY,
+  const c = CHOOSE[v.id] ||= { themes: [], theme_note: '', pack: sug.pack || 'western', personality: PERSONALITY,
     game: v.game || (sug.game && sug.game !== 'unknown' ? sug.game : '') };
   return `<div class="choose"><div class="small">Detected: <strong>${esc(sug.game || 'unknown')}</strong>${sug.confidence != null ? ` (${Math.round(sug.confidence*100)}% sure)` : ''}. ${esc(sug.reason || '')}</div>
     <div class="row"><div><label>Game</label><input data-ch="${v.id}:game" value="${esc(c.game)}"></div>
     <div><label>Genre style</label><select data-ch="${v.id}:pack">${opt(CAT.packs, c.pack)}</select></div>
     <div><label>Personality</label><select data-ch="${v.id}:personality">${opt(CAT.personalities, c.personality)}</select></div>
     <div><label>Character (optional)</label><input data-ch="${v.id}:character" value="${esc(c.character || '')}" placeholder="for example: John Marston" maxlength="60"></div></div>
+    ${thinkingBox(v.id, c.themes || [], c.theme_note || '', 'chth', 'ch')}
     <div class="acts"><button class="s primary" data-startstyle="${v.id}">Start commentary</button><span class="small">The paid scan only begins when you press this.</span></div></div>`;
 }
 
@@ -415,6 +429,7 @@ function card(v) {
       ${!busy && v.has_video ? `
         <select data-regsel="${v.id}:amount" aria-label="Commentary amount"><option value="">Same eagerness</option><option value="4" ${r.amount==='4'?'selected':''}>Sparse</option><option value="8" ${r.amount==='8'?'selected':''}>Balanced</option><option value="10" ${r.amount==='10'?'selected':''}>Chatty</option></select>
         <select data-regsel="${v.id}:pack" aria-label="Genre style"><option value="">Same style</option>${opt(CAT.packs, r.pack)}</select>
+        <details class="thinking" style="display:inline-block;vertical-align:top"><summary class="s">Thinking about…</summary>${thinkingBoxInner(v)}</details>
         <input data-regsel="${v.id}:character" aria-label="Character for this video" placeholder="Character (e.g. John Marston)" maxlength="60" value="${esc(r.character ?? v.character ?? '')}" style="width:210px">
         <select data-regsel="${v.id}:personality" aria-label="Personality"><option value="">Same personality</option>${opt(CAT.personalities, r.personality)}</select>
         <button class="s" data-regen="${v.id}" title="Write new commentary with the settings next to it">Regenerate commentary</button>
@@ -468,7 +483,7 @@ async function load() {
     ready = true;
     $('folder').value = s.folder_id;
     for (const k of ['game','persona','character','story_point','voice_notes']) $(k).value = s.options[k] || '';
-    CAT = { packs: s.packs, personalities: s.personalities }; PERSONALITY = s.personality;
+    CAT = { packs: s.packs, personalities: s.personalities, themes: s.think_themes }; PERSONALITY = s.personality;
     $('personality').innerHTML = opt(CAT.personalities, s.personality);
     $('vpack').innerHTML = opt(CAT.packs, 'western'); loadVoices();
     setAmount(s.amount); $('yt').checked = s.youtube_publish; $('learn').checked = s.learn; $('ask').checked = s.ask_style; $('ab').checked = s.ab_test; fillCaptions(s); fillChannel(s); $('cutq').checked = s.cutscene_quiet; $('onev').checked = s.one_voice; ONEVOICE = s.one_voice; markOneVoice(); $('cap_com').checked = s.cap_commentary; $('cap_dlg').checked = s.cap_dialogue;
@@ -654,6 +669,9 @@ document.addEventListener('change', async e => {
   const d = e.target.dataset;
   try {
     if (d.regsel) { const [id, f] = d.regsel.split(':'); (REGEN[id] ||= {})[f] = e.target.value; }
+    if (d.regth) { const [id, tid] = d.regth.split(':'); const v = VIDEOS.find(x => x.id == id) || {}; let mine = []; try { mine = JSON.parse(v.themes || '[]'); } catch (_) {}
+      const cur = new Set((REGEN[id] ||= {}).themes ?? mine); e.target.checked ? cur.add(tid) : cur.delete(tid); REGEN[id].themes = [...cur]; }
+    if (d.chth) { const [id, tid] = d.chth.split(':'); const c = (CHOOSE[id] ||= {}); const cur = new Set(c.themes || []); e.target.checked ? cur.add(tid) : cur.delete(tid); c.themes = [...cur]; }
     if (d.ch) { const [id, f] = d.ch.split(':'); (CHOOSE[id] ||= {})[f] = e.target.value; }
     if (d.cv) { try { await api('voices/character', { name: d.cv, voice_id: e.target.value }); say('Saved. Press Rebuild video (or Regenerate commentary) on a video to hear it.'); lastSig = ''; load(); } catch (err) { say(err.message, true); } }
     if (d.vp) { await api('voices/assign', { pack: $('vpack').value, persona: d.vp, voice_id: e.target.value }); say('Voice saved for this style. Press Rebuild video on a video to hear it.'); lastSig = ''; load(); }
@@ -680,9 +698,9 @@ document.addEventListener('click', async e => {
     if (d.lines) { const id = +d.lines; OPEN.has(id) ? OPEN.delete(id) : OPEN.add(id); if (OPEN.has(id)) showLines(id); else $('l'+id).innerHTML=''; }
     if (d.approve && confirm('Make this video public on YouTube?')) { await api(`videos/${d.approve}/approve`, {}); say('Published.'); await refresh(); }
     if (d.retry) { await api(`videos/${d.retry}/retry`, {}); await refresh(); }
-    if (d.regen) { const r = REGEN[d.regen] || {}, b = {}; if (r.amount) b.amount = +r.amount; if (r.pack) b.pack = r.pack; if (r.personality) b.personality = r.personality; if (r.character !== undefined) b.character = r.character;
+    if (d.regen) { const r = REGEN[d.regen] || {}, b = {}; if (r.amount) b.amount = +r.amount; if (r.pack) b.pack = r.pack; if (r.personality) b.personality = r.personality; if (r.character !== undefined) b.character = r.character; if (r.themes !== undefined) b.themes = r.themes; if (r.theme_note !== undefined) b.theme_note = r.theme_note;
       await api(`videos/${d.regen}/regenerate`, b); say('Regenerating the commentary from the saved scan...'); await refresh(); }
-    if (d.startstyle) { const c = CHOOSE[d.startstyle]; await api(`videos/${d.startstyle}/start`, { pack: c.pack, personality: c.personality, game: c.game, character: c.character || '' }); delete CHOOSE[d.startstyle]; say('Started.'); await refresh(); }
+    if (d.startstyle) { const c = CHOOSE[d.startstyle]; await api(`videos/${d.startstyle}/start`, { pack: c.pack, personality: c.personality, game: c.game, character: c.character || '', themes: c.themes || [], theme_note: c.theme_note || '' }); delete CHOOSE[d.startstyle]; say('Started.'); await refresh(); }
     if (d.dens) { const [id, val] = d.dens.split(':'); await api(`videos/${id}/density`, { value: +val }); say('Thanks. The brain adjusts how eager it is for this genre style.'); await refresh(); }
     if (d.changevoices) { $('vpack').value = d.changevoices; await loadVoices(); $('vpack').scrollIntoView({ behavior: 'smooth', block: 'center' }); say('Choose the voices for this style, then press Rebuild video.'); }
     if (d.fixstyle) { const [id, pk] = d.fixstyle.split(':'); await api(`videos/${id}/regenerate`, { pack: pk }); say('Regenerating in the right style...'); await refresh(); }

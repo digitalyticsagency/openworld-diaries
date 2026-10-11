@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from . import ambience, analytics, captions, comments, trends, cutscenes, db, envfile, evolve, google_auth, knowledge, pipeline, series, sources, styles, voices
+from . import ambience, analytics, thinking, captions, comments, trends, cutscenes, db, envfile, evolve, google_auth, knowledge, pipeline, series, sources, styles, voices
 from . import channel as channel_lines
 from . import voice as voice_mod
 from .config import POLL_SECONDS
@@ -162,6 +162,8 @@ class Regen(BaseModel):
     personality: str | None = None
     game: str | None = None
     character: str | None = None
+    themes: list[str] | None = None
+    theme_note: str | None = None
 
 
 class KeyValue(BaseModel):
@@ -182,6 +184,8 @@ class Start(BaseModel):
     personality: str = "balanced"
     game: str | None = None
     character: str | None = None
+    themes: list[str] | None = None
+    theme_note: str | None = None
 
 
 class Assign(BaseModel):
@@ -231,6 +235,7 @@ def state():
         "music_mode": pipeline.music_mode(), "own_music": (pipeline.own_music_path().name if pipeline.own_music_path() else None),
         "calm_mode": pipeline.calm_on(),
         "ambience_on": pipeline.ambience_on(), "game_audio": int(round(pipeline.game_audio_level() * 100)),
+        "think_themes": thinking.catalog(),
         "series_on": series.enabled(), "series_name": series.name(),
         "moral_mode": pipeline.moral_mode(),
         "knowledge_on": db.get("knowledge_on", "1") == "1",
@@ -256,7 +261,7 @@ def state():
                     "cut_count": len(cutscenes.effective(cutscenes.load(v["cutscenes"]))),
                     "cut_seconds": cutscenes.total_seconds(cutscenes.effective(cutscenes.load(v["cutscenes"])))} for v in db.rows(
             "SELECT id,name,status,error,self_score,combined_score,yt_video_id,pack,personality,game,suggestion,cutscenes,"
-            "status_at,started_at,progress,density_rating,stats,arm,episode,character "
+            "status_at,started_at,progress,density_rating,stats,arm,episode,character,themes,theme_note "
             "FROM videos ORDER BY id DESC LIMIT 50")],
         "brain": {"bias": {p: evolve.density_bias(p) for p in styles.PACKS if evolve.density_bias(p)},
                   "kind_weights": evolve.kind_weights()},
@@ -618,7 +623,7 @@ def regenerate(vid: int, r: Regen):
     if not (pipeline.workdir(vid) / "scenes.json").exists():
         raise HTTPException(400, "The saved scan is missing; use Retry to process it again.")
     pipeline.set_status(vid, "writing")
-    run_bg(pipeline.regenerate, vid, r.amount, r.persona, r.pack, r.personality, r.game, r.character)
+    run_bg(pipeline.regenerate, vid, r.amount, r.persona, r.pack, r.personality, r.game, r.character, r.themes, r.theme_note)
     return {"ok": True}
 
 
@@ -762,7 +767,7 @@ def start_video(vid: int, s: Start):
     v = idle_video(vid)
     if v["status"] != "choose_style":
         raise HTTPException(400, "This video is not waiting for a style.")
-    pipeline.start(vid, s.pack, s.personality, s.game, s.character)
+    pipeline.start(vid, s.pack, s.personality, s.game, s.character, s.themes, s.theme_note)
     pipeline.set_status(vid, "queued")
     run_bg(pipeline.process, vid)
     return {"ok": True}

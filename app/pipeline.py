@@ -8,7 +8,7 @@ from pathlib import Path
 from . import (beats, captions, channel, cutscenes, db, detect, evolve, gaps, guard, memory, publisher, scenes, sentiment,
                sources, styles, transcript, travel, voice, writer)
 from . import report as brain_report
-from . import ambience, clips as clipmod
+from . import ambience, thinking, clips as clipmod
 from . import knowledge
 from . import packaging, series, thumbnail, viral
 from .config import DATA, MIN_GAP_FLOOR, TRAVEL_GAP_DEFAULT, TRAVEL_GAP_MIN
@@ -60,13 +60,17 @@ def daydream_on():
     return db.get("daydream", "1") == "1"
 
 
-def start(vid, pack, personality, game, character=None):
+def start(vid, pack, personality, game, character=None, themes=None, theme_note=None):
     """The user confirmed (or changed) the style: save it and let processing continue. A character, when given,
     is used for this one video; an empty one clears it."""
     db.run("UPDATE videos SET pack=?, personality=?, game=? WHERE id=?",
            (styles.pack_id(pack), styles.personality_id(personality), (game or "").strip() or None, vid))
     if character is not None:
         db.run("UPDATE videos SET character=? WHERE id=?", ((character or "").strip()[:60] or None, vid))
+    if themes is not None:           # what the player is thinking about on quiet travel; an empty list clears it
+        db.run("UPDATE videos SET themes=? WHERE id=?", (json.dumps(thinking.clean_ids(themes)), vid))
+    if theme_note is not None:
+        db.run("UPDATE videos SET theme_note=? WHERE id=?", (thinking.clean_note(theme_note) or None, vid))
 
 
 def amount():
@@ -418,10 +422,10 @@ def process(vid):
     _guarded(vid, run)
 
 
-def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=None, character=None):
-    if pack or personality or game or character is not None:
+def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=None, character=None, themes=None, theme_note=None):
+    if pack or personality or game or character is not None or themes is not None or theme_note is not None:
         cur = db.one("SELECT * FROM videos WHERE id=?", (vid,))
-        start(vid, pack or cur["pack"], personality or cur["personality"], game or cur["game"], character)
+        start(vid, pack or cur["pack"], personality or cur["personality"], game or cur["game"], character, themes, theme_note)
     v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
     work = workdir(vid)
     src = work / "source.mp4"
@@ -470,7 +474,9 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     chosen, blocked, possible = plan_commentary(all_beats, free, cutscenes.subtract_ranges(speech, blocks), length,
                                                 eager, target_lpm(), cap_commentary(), extra=extra, quiet_fn=quiet_fn,
                                                 travel_gap=travel_gap())
-    travel_kinds = travel.assign(chosen, notes, channel.themes_for(opts["character"]))
+    chosen_themes = thinking.clean_ids(json.loads(v["themes"] or "[]")) if v.get("themes") else []
+    travel_kinds = travel.assign(chosen, notes, channel.themes_for(opts["character"]),
+                                 reflect=thinking.prompts(chosen_themes) or None, note=thinking.clean_note(v.get("theme_note")) if chosen_themes else "")
     n_catch = channel.assign_catchphrases(chosen, cfg["phrases"], length, vid) if cfg["catch_on"] else 0
     db.run("UPDATE videos SET arm=? WHERE id=?", (arm, vid))
 
@@ -661,9 +667,9 @@ def recaption(vid):
     _guarded(vid, run)
 
 
-def regenerate(vid, amt=None, persona=None, pack=None, personality=None, game=None, character=None):
+def regenerate(vid, amt=None, persona=None, pack=None, personality=None, game=None, character=None, themes=None, theme_note=None):
     """New commentary from the saved scan: no Gemini calls, no re-download."""
-    _guarded(vid, lambda: _generate(vid, amt, persona, pack, personality, game, character))
+    _guarded(vid, lambda: _generate(vid, amt, persona, pack, personality, game, character, themes, theme_note))
 
 
 def rerender(vid):
