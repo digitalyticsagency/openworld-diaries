@@ -80,7 +80,12 @@ def _ask(system, opps, scenes, segments, windows, kept, profile, lo, hi, note=""
         user["chunk"] = chunk
     if note:
         user["note"] = note
-    return _lines_from(parse_json(claude(system, json.dumps(user))), by_id)
+    for attempt in range(2):                 # an unreadable answer is asked for again once, never the end of the video
+        try:
+            return _lines_from(parse_json(claude(system, json.dumps(user))), by_id)
+        except ValueError:                   # JSONDecodeError is a ValueError
+            if attempt:
+                raise
 
 
 def _shorten(system, dropped, opps_by_id):

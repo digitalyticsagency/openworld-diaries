@@ -503,7 +503,10 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     lines, dropped = writer.write_lines(notes, segs, windows, system, length, chosen, profile=profile,
                                         progress=progress_cb(vid, "Sections"), blocks=blocks)
     lines, filled = writer.fill_missed(notes, segs, windows, system, lines, chosen, profile=profile, blocks=blocks)
-    lines = evolve.refine(lines, notes, windows, system, min_gap=MIN_GAP_FLOOR, blocks=blocks)
+    try:
+        lines = evolve.refine(lines, notes, windows, system, min_gap=MIN_GAP_FLOOR, blocks=blocks)
+    except Exception:       # the editor pass only polishes: if it cannot be read, the written lines stand
+        traceback.print_exc()
     lines = channel.fix_lines(lines, chosen, cfg)      # the welcome and the like-and-subscribe really say so, once
     written_travel = {}
     for l in lines:                       # the thoughts that were really written, not just planned

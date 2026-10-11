@@ -20,10 +20,21 @@ def parse_json(text):
     """Parse model output as JSON. Models sometimes emit an invalid escape such as \\' or \\_ ;
     a lone backslash is doubled so the text still parses, and valid escapes are left alone."""
     text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return json.loads(_ESCAPE.sub(lambda m: m.group(1) or "\\\\", text), strict=False)
+    fixed = _ESCAPE.sub(lambda m: m.group(1) or "\\\\", text)
+    decoder = json.JSONDecoder(strict=False)
+    for t in (text, fixed):
+        try:
+            return json.loads(t)
+        except json.JSONDecodeError:
+            pass
+        # Models sometimes add a note after the answer (or before it): the first JSON value is the answer.
+        starts = [i for i in (t.find("["), t.find("{")) if i >= 0]
+        if starts:
+            try:
+                return decoder.raw_decode(t[min(starts):])[0]
+            except json.JSONDecodeError:
+                pass
+    return json.loads(fixed, strict=False)       # still unreadable: raise the real error
 
 
 def claude(system, user, max_tokens=8000):

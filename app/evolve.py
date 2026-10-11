@@ -49,7 +49,7 @@ def refine(lines, scenes, windows, system, min_gap=None, blocks=None):
     scores = parse_json(claude((PROMPTS / "judge.md").read_text(),
                                json.dumps({"lines": idx, "scene_notes": near,
                                            "locked_windows": windows})))
-    by_i = {s["i"]: s for s in scores}
+    by_i = {s["i"]: s for s in scores if isinstance(s, dict) and isinstance(s.get("i"), int)}
     for i, l in enumerate(lines):
         l["self_score"] = float(by_i.get(i, {}).get("overall", 6))
     weak = [{"i": i, "line": l["line"], "fix": by_i.get(i, {}).get("fix", "")}
@@ -58,8 +58,8 @@ def refine(lines, scenes, windows, system, min_gap=None, blocks=None):
         rew = parse_json(claude(system, "Rewrite these weak lines. Keep each one's time, persona and "
                                         "emotion, apply the fix, obey every hard rule. Return JSON "
                                         '[{"i": index, "line": "new text"}] only.\n' + json.dumps(weak)))
-        for r in rew:
-            if 0 <= r["i"] < len(lines) and r.get("line"):
+        for r in rew if isinstance(rew, list) else []:
+            if isinstance(r, dict) and isinstance(r.get("i"), int) and 0 <= r["i"] < len(lines) and r.get("line"):
                 lines[r["i"]]["line"] = r["line"]
                 lines[r["i"]]["self_score"] = WEAK  # unproven until a human rates it
     kept, _ = guard.enforce(lines, windows, scenes, min_gap=min_gap, blocks=blocks)
