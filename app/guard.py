@@ -132,6 +132,19 @@ PAST_MARK = re.compile(r"\b(used to|once|remember|remembered|back in|back when|w
                        r"i'?d|i had|i was|wish i|if i|someday|one day|maybe i|would|sleep|wake|wish|hope|hoping|want|could|might|gonna|going to|"
                        r"let me|let's|should|if)\b", re.I)           # memories, hopes and wishes may be about anything
 SCENE_WINDOW = 15.0
+FUNCTION_END = {"a", "an", "the", "my", "your", "his", "her", "our", "their", "and", "but", "or", "of", "because", "if", "while", "than"}   # words no sentence can end on
+
+
+def unfinished(text, min_words=3):
+    """True for a line that stops mid-thought: it trails off with dots, does not end in a full stop, a question mark or an exclamation,
+    ends on a joining word, or is too short to be a sentence."""
+    t = text.strip()
+    if re.search(r"(\.\.\.|\u2026)\s*[\"')\]]*$", t) or not re.search(r"[.!?][\"')\]]*$", t):
+        return True
+    words = re.findall(r"[a-z']+", t.lower())
+    return len(words) < min_words or (words[-1] in FUNCTION_END if words else True)
+
+
 LONGEST_PLAUSIBLE = 3600.0      # a video this short cannot show hours or days passing
 
 
@@ -144,7 +157,7 @@ def _scene_text(scenes, t):
 def scene_mismatch(ln, text, scenes):
     """The first thing the line says is here right now that the scan does not show, or None. Only the present is judged: a memory
     ("used to", "once", "I'd") may be about anything, and a line with no scene notes near it is not judged at all."""
-    if not scenes or ln.get("opp_id") in ("intro", "outro") or set((ln.get("beat_kinds") or "").split(",")) & {"travel_memory", "recap"}:
+    if not scenes or ln.get("opp_id") in ("intro", "outro") or set((ln.get("beat_kinds") or "").split(",")) & {"travel_memory", "recap", "story_told"}:
         return None
     blob, near = _scene_text(scenes, float(ln.get("start", 0)))
     if not near or PAST_MARK.search(text):
@@ -169,7 +182,11 @@ def content_reason(ln, text, length=None, scenes=None):
     """Rules about what a line may say, beyond when and where it may be."""
     if ln.get("opp_id") not in ("intro", "outro") and GREETING.search(text):
         return "greeting or subscribe line outside the intro and outro"
-    if length and length < LONGEST_PLAUSIBLE and TIME_SPAN.search(text) and ln.get("opp_id") not in ("intro", "outro"):
+    kinds_early = set((ln.get("beat_kinds") or "").split(","))
+    if "travel_story" in kinds_early and unfinished(text, 5 if "story_told" in kinds_early else 3):
+        return "unfinished sentence"
+    if length and length < LONGEST_PLAUSIBLE and TIME_SPAN.search(text) and ln.get("opp_id") not in ("intro", "outro") \
+            and "story_told" not in kinds_early:
         return "claims a time span the video does not show"
     kinds0 = set((ln.get("beat_kinds") or "").split(","))
     if ln.get("opp_id") not in ("intro", "outro") and (NARRATOR.search(text) or ("travel_story" in kinds0 and STORY_NARRATOR.search(text))):
@@ -217,12 +234,16 @@ def dedupe(lines, previous):
     return kept, dropped
 
 
+SAME_PASSAGE_GAP = 0.6       # lines of one told passage follow each other closely, with a breath between
+
+
 def enforce(lines, windows, scenes, min_gap=None, max_words=MAX_WORDS, blocks=None):
     """Return (kept, dropped). Dropped entries carry a 'reason'."""
     min_gap = MIN_GAP if min_gap is None else min_gap
     length = (max((s.get("t", 0) for s in scenes), default=0) + 3.0) if scenes else None      # about how long the video is
     kept, dropped = [], []
     prev_end = prev_silent_end = -1e9
+    prev_passage = None
     for ln in sorted(lines, key=lambda x: x.get("start", 0)):
         text = (ln.get("line") or "").strip()
         start = float(ln.get("start", 0))
@@ -265,7 +286,7 @@ def enforce(lines, windows, scenes, min_gap=None, max_words=MAX_WORDS, blocks=No
                 reason = "overlaps speech"
             elif maxd < est_duration(text):
                 reason = "no room before speech"
-            elif start < prev_end + min_gap:
+            elif start < prev_end + (SAME_PASSAGE_GAP if ln.get("passage") is not None and ln.get("passage") == prev_passage else min_gap):
                 reason = "too close to previous line"
             elif not grounded(ln, scenes):
                 reason = "emotion not grounded in an on-screen event"
@@ -277,6 +298,7 @@ def enforce(lines, windows, scenes, min_gap=None, max_words=MAX_WORDS, blocks=No
                 ln = {**ln, "line": text, "max_duration": round(maxd, 2)}
                 kept.append(ln)
                 prev_end = end
+                prev_passage = ln.get("passage")
                 continue
         dropped.append({**ln, "reason": reason})
     return kept, dropped

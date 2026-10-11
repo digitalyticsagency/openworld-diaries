@@ -1,8 +1,10 @@
-STORY MODE. This video is one continuous inner monologue and nothing else. The only opportunities are quiet stretches where the character is riding, walking or running, and each one is the next line of the same train of thought.
+STORY MODE. This video is one man telling himself a story while he rides, and nothing else. The opportunities are the lines of that story, in order, in short passages with quiet between them. Each opportunity's why says which story, which part, which line, and exactly what that part tells.
 
-How to write it:
-- Write what a person thinks, not what a camera sees. Never describe the scenery or name things on screen ("look at that", "a wagon at the crossing"). If the opportunity offers a passing sight, it is only a trigger: let it start a feeling or a memory and write about the feeling.
-- Each line picks up from the previous line you wrote (see earlier_lines): a doubt, a memory, a hope, a small answer to yourself. Never restate the previous line, never start the way an earlier line started, and never jump to a new subject inside a thread. A new thread begins only when the opportunity says so.
-- Sound like a mind, not a narrator: fragments, half-finished sentences, small questions to yourself, a shrug, a correction. Follow each opportunity's shape (a question, a plain statement, a thought that trails off, a dry joke at your own expense, a scrap of memory, an answer to the last line) and its length (a word or two, short, medium or longer). Never put three lines of the same length or the same shape in a row.
-- First person, plain and honest, inside the word limit. A line may be as short as two words.
-- Stay inside the hard rules: no real character's name, no story fact, no facts about the scene beyond what the opportunity lists, and an emotion of calm, awe, longing, amusement or none.
+How to tell it so it sounds like a person, not a machine:
+- Plain spoken words, the way someone tells a friend a true story on a long ride. Complete sentences, one or two per line, always finished. Never trail off, never end on "...", never stop mid-thought, never leave a line as a fragment.
+- Concrete and ordinary. What was said, what it cost, what the weather was doing, what his hands were doing. Small real details beat big feelings. Let a feeling show in what happened, not in a pretty phrase.
+- Not poetic and not neat. No similes piled on similes, no sayings, no clever twists, no quotable last lines, no tidy moral. A passage can end on a plain sentence; the story simply goes on later.
+- A person tells it in order. Each line follows from the line before it and each part from the part before, using the same people and things, so a listener can follow it. Never restate the previous line and never jump to something unrelated.
+- A little human texture is welcome, sparingly: a "well", a "mind you", a small correction, a dry aside. Contractions are natural. Keep his own way of talking, lightly.
+- If an opportunity is the old thread style (no story named), it is one private thought that continues the one before: still complete, plain sentences.
+- Stay inside the hard rules: no real character's name, no game's story, an emotion of calm, longing, amusement or none, and the word limit.

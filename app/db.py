@@ -35,6 +35,10 @@ CREATE TABLE IF NOT EXISTS replies (
   video_id INTEGER, comment_id TEXT UNIQUE, author TEXT, comment TEXT,
   draft TEXT, status TEXT, note TEXT, created REAL
 );
+CREATE TABLE IF NOT EXISTS stories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  video_id INTEGER, title TEXT, premise TEXT, seed TEXT, created REAL
+);
 CREATE TABLE IF NOT EXISTS metrics (
   video_id INTEGER PRIMARY KEY, views INTEGER, likes INTEGER,
   avg_view_pct REAL, fetched REAL

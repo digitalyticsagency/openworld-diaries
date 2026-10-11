@@ -1,4 +1,5 @@
 import json
+import re
 
 from . import guard, knowledge, styles
 from .config import MIN_GAP_FLOOR, PROMPTS, WINDOW_SECONDS
@@ -15,6 +16,8 @@ PERSONA_RULE = {
 def build_system(style, opts):
     tpl = (PROMPTS / "master.md").read_text()
     pack_text, personality_text = styles.pack_prompt(opts.get("pack"), opts.get("personality"))
+    if opts.get("story_mode"):             # a told story has its own rules of speech: the mind-talk guide would pull the other way
+        tpl = re.sub(r"HOW A MIND REALLY SOUNDS.*?(?=\{GUARDRAILS\})", "", tpl, flags=re.S)
     text = (tpl.replace("{GUARDRAILS}", (PROMPTS / "guardrails.md").read_text())
             .replace("{GENRE_PACK}", pack_text)
             .replace("{PERSONALITY}", personality_text)
@@ -57,7 +60,8 @@ def _lines_from(raw, by_id):
             continue
         ln = {**r, "start": o["t"], "max_duration": o["max_duration"], "max_words": o["max_words"],
               "opp_id": o["id"], "beat_kinds": ",".join(o["kinds"]), "salience": o["salience"],
-              "silent": o["kind"] == "silent", "daydream": o["kind"] == "daydream"}
+              "silent": o["kind"] == "silent", "daydream": o["kind"] == "daydream",
+              "story": "story_told" in o["kinds"], "passage": o.get("passage")}
         if ln.get("trigger_t") is None and o["beat_t"] is not None:
             ln["trigger_t"] = o["beat_t"]
         out.append(ln)

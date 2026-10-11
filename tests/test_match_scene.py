@@ -70,8 +70,8 @@ class WhatIsHereRightNowTests(unittest.TestCase):
 
     def test_the_welcome_the_outro_and_unscanned_moments_are_not_judged(self):
         self.assertIsNone(judge("Welcome to the channel, folks. Moon's up.", opp="intro", kinds="intro"))
-        self.assertIsNone(judge("Engine's humming.", scn=[]))
-        self.assertIsNone(judge("Engine's humming.", scn=[frame(500)]))                               # no scan note near this moment
+        self.assertIsNone(judge("Engine's humming along.", scn=[]))
+        self.assertIsNone(judge("Engine's humming along.", scn=[frame(500)]))                               # no scan note near this moment
 
     def test_a_plain_feeling_with_no_physical_detail_always_passes(self):
         for text in ("Wonder if a man like me ever gets to stay put somewhere.", "Tried honest once. Almost.", "Hm. Not today."):

@@ -8,7 +8,7 @@ from pathlib import Path
 from . import (beats, captions, channel, cutscenes, db, detect, evolve, gaps, guard, memory, publisher, scenes, sentiment,
                sources, styles, transcript, travel, voice, writer)
 from . import report as brain_report
-from . import ambience, storymode, thinking, clips as clipmod
+from . import ambience, storybible, storymode, thinking, clips as clipmod
 from . import knowledge
 from . import packaging, series, thumbnail, viral
 from .config import DATA, MIN_GAP_FLOOR, TRAVEL_GAP_DEFAULT, TRAVEL_GAP_MIN
@@ -509,9 +509,28 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     if calm_here:
         eager = min(eager, CALM_EAGER)      # a calm free-roam video: only the strongest moments, long quiet stretches
     chosen_themes = thinking.for_video(v)
+    story_info = None
     if story_on:
-        story = storymode.plan(notes, free, length, story_lpm, chosen_themes, v.get("theme_note") if chosen_themes else "")
-        chosen = beats._fit_to_neighbours(sorted(story + [o for o in (intro, outro) if o], key=lambda o: o["t"]))
+        # a told story: a fresh, different one every time, in passages with quiet between them
+        avoid = [(o["t"] - 1.0, o["t"] + min(o["max_duration"], 10.0) + 1.0) for o in (intro, outro) if o]
+        passes = storymode.passages(notes, free, length, story_lpm, avoid)
+        bible = None
+        if passes:
+            try:
+                bible = storybible.make(len(passes), chosen_themes, v.get("theme_note") or "")
+            except Exception:
+                traceback.print_exc()
+        if bible:
+            passes = passes[:len(bible["beats"])]
+            story = storymode.told_opps(passes, bible)
+            chosen = sorted(story + [o for o in (intro, outro) if o], key=lambda o: o["t"])
+            storybible.save(vid, bible)
+            (work / "story.json").write_text(json.dumps(bible, indent=2))
+            story_info = {"title": bible["title"], "parts": len(passes), "fallback": False}
+        else:                 # no story could be made: the older thread of thoughts, so the video is not left without commentary
+            story = storymode.plan(notes, free, length, story_lpm, chosen_themes, v.get("theme_note") if chosen_themes else "")
+            chosen = beats._fit_to_neighbours(sorted(story + [o for o in (intro, outro) if o], key=lambda o: o["t"]))
+            story_info = {"title": None, "parts": 0, "fallback": bool(passes)}
         blocked, possible, travel_kinds = [], len(story), {"story": len(story)}
         n_catch = 0
     else:
@@ -544,7 +563,8 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
         "micro_gaps": sum(1 for g in free if g["kind"] == "micro"), "planned": len(chosen),
         "lines": len(lines), "filled": filled, "eagerness": round(eager, 1), "arm": arm,
         "slider": amt, "learned": learned, "calm": calm_here, "calm_overridden": calm_on() and not calm_active(), "moments_per_min": per_min,
-        "story": {"on": story_on, "lpm": story_lpm, "thoughts": sum(1 for l in lines if "travel_story" in (l.get("beat_kinds") or ""))} if story_on else None,
+        "story": {"on": story_on, "lpm": story_lpm, "thoughts": sum(1 for l in lines if "travel_story" in (l.get("beat_kinds") or "")),
+                  **(story_info or {})} if story_on else None,
         "calm_skipped": (f"{per_min} moments a minute is too busy for the calm pace") if calm_active() and not quiet_enough else None,
         "silent": sum(1 for l in lines if l.get("silent")), "target_lpm": target_lpm(),
         "per_minute": round(len(lines) / (length / 60), 1), "possible_per_minute": possible,
@@ -742,7 +762,7 @@ def rerender(vid):
                               "line": r["line"], "silent": True, "max_duration": r["max_duration"] or 6.0})
                 continue
             lines.append({"id": r["id"], "start": r["start"], "persona": r["persona"],
-                          "emotion": r["emotion"], "line": r["line"],
+                          "emotion": r["emotion"], "line": r["line"], "story": "story_told" in (r.get("beat_kinds") or ""),
                           "max_duration": max(1.0, min(room, nxt, 20.0))})
         cuts = active_cuts(ensure_cuts(vid, notes, workdir(vid) / "source.mp4"))
         blocks = cutscenes.padded(cuts) if cuts else []

@@ -21,8 +21,14 @@ MAX_BOOST_DB = 24.0      # some takes arrive very quiet
 FADE = 1.5               # a background bed fades in and out over this long, seconds
 
 
-def _settings(emotion):
-    """Steady, so the same voice sounds like the same person on every line. Emotion only nudges expressiveness."""
+STORY_SETTINGS = {"stability": 0.42, "similarity_boost": 0.9, "style": 0.35, "use_speaker_boost": True, "speed": 0.94}
+
+
+def _settings(emotion, story=False):
+    """Steady, so the same voice sounds like the same person on every line. Emotion only nudges expressiveness. A story is told a little
+    slower and looser, so it sounds like someone talking rather than reading."""
+    if story:
+        return dict(STORY_SETTINGS)
     if emotion in STRONG:
         return {"stability": 0.5, "similarity_boost": 0.9, "style": 0.3, "use_speaker_boost": True}
     return {"stability": 0.65, "similarity_boost": 0.9, "style": 0.1, "use_speaker_boost": True}
@@ -52,33 +58,45 @@ def _post(url, headers, body):
     raise last
 
 
-def tts(text, voice_id, emotion, out):
+def tts(text, voice_id, emotion, out, story=False, prev=None, nxt=None):
     body = {"text": text, "model_id": os.environ.get("ELEVEN_MODEL", "eleven_multilingual_v2"),
-            "voice_settings": _settings(emotion), "seed": VOICE_SEED}   # a fixed seed keeps takes repeatable
+            "voice_settings": _settings(emotion, story), "seed": VOICE_SEED}   # a fixed seed keeps takes repeatable
+    if story and prev:                  # the lines either side, so the voice carries the sentence on instead of starting cold
+        body["previous_text"] = prev[-300:]
+    if story and nxt:
+        body["next_text"] = nxt[:300]
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
     headers = {"xi-api-key": llm.key("ELEVENLABS_API_KEY")}
     r = _post(url, headers, body)
     if r.status_code == 422 and "seed" in r.text:       # a model that does not take a seed
         body.pop("seed")
         r = _post(url, headers, body)
+    if r.status_code == 422 and any(k in r.text for k in ("speed", "previous_text", "next_text")):    # or speed or neighbouring text
+        body["voice_settings"].pop("speed", None)
+        body.pop("previous_text", None)
+        body.pop("next_text", None)
+        r = _post(url, headers, body)
     r.raise_for_status()
     Path(out).write_bytes(r.content)
 
 
-def _cache_key(text, voice_id, emotion):
+def _cache_key(text, voice_id, emotion, story=False, prev=None, nxt=None):
     raw = "|".join([voice_id or "", text, emotion or "", os.environ.get("ELEVEN_MODEL", "eleven_multilingual_v2"), str(VOICE_SEED),
-                    repr(_settings(emotion)), str(TARGET_MEAN_DB)])
+                    repr(_settings(emotion, story)), str(TARGET_MEAN_DB), str(story), prev or "", nxt or ""])
     return hashlib.sha1(raw.encode()).hexdigest()
 
 
-def spoken(text, voice_id, emotion, out, cache_dir):
+def spoken(text, voice_id, emotion, out, cache_dir, story=False, prev=None, nxt=None):
     """A leveled take of this line at `out`. The same line in the same voice is only ever paid for once: after a failure
     the retry reuses every take that already succeeded."""
-    cache = Path(cache_dir) / f"{_cache_key(text, voice_id, emotion)}.mp3"
+    cache = Path(cache_dir) / f"{_cache_key(text, voice_id, emotion, story, prev, nxt)}.mp3"
     if cache.exists():
         shutil.copyfile(cache, out)
         return
-    tts(text, voice_id, emotion, out)
+    if story:
+        tts(text, voice_id, emotion, out, story=True, prev=prev, nxt=nxt)
+    else:
+        tts(text, voice_id, emotion, out)
     level_clip(out)
     cache.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(out, cache)
@@ -113,6 +131,17 @@ def duration(path):
     return float(r.stdout.strip())
 
 
+def _neighbours(lines, n):
+    """(the story line before, the story line after) for a line of a told story, when they follow within a few seconds; else (None, None)."""
+    ln = lines[n]
+    if not ln.get("story"):
+        return None, None
+    prev = next((l for l in reversed(lines[:n]) if l.get("story") and not l.get("dropped") and not l.get("silent")), None)
+    nxt = next((l for l in lines[n + 1:] if l.get("story") and not l.get("dropped") and not l.get("silent")), None)
+    near = lambda a, b: a is not None and abs(float(b["start"]) - float(a["start"])) <= 14.0
+    return (prev["line"] if near(prev, ln) else None), (nxt["line"] if near(nxt, ln) else None)
+
+
 def make_clips(lines, windows, system, work, pack=None, progress=None, character=None):
     """Render each line. Real audio length is re-checked against the speech windows."""
     cdir = Path(work) / "clips"
@@ -129,13 +158,14 @@ def make_clips(lines, windows, system, work, pack=None, progress=None, character
         if not voice:
             raise RuntimeError(f"No voice set for {ln['persona']}. Choose one in the app or set ELEVEN_VOICE_{ln['persona'].upper()} in .env")
         path = cdir / f"c_{n:03d}.mp3"
-        spoken(ln["line"], voice, ln.get("emotion"), path, Path(work) / "voice_cache")
+        prev, nxt = _neighbours(lines, n)
+        spoken(ln["line"], voice, ln.get("emotion"), path, Path(work) / "voice_cache", story=bool(ln.get("story")), prev=prev, nxt=nxt)
         d = duration(path)
         if d > ln["max_duration"]:
             budget = max(3, int(ln["max_duration"] * WORDS_PER_SEC))
             ln["line"] = claude(system, f"Shorten to at most {min(budget, MAX_WORDS)} words, same meaning "
                                         f"and emotion. Return only the line text: {ln['line']}", 300).strip().strip('"')
-            spoken(ln["line"], voice, ln.get("emotion"), path, Path(work) / "voice_cache")
+            spoken(ln["line"], voice, ln.get("emotion"), path, Path(work) / "voice_cache", story=bool(ln.get("story")), prev=prev, nxt=nxt)
             d = duration(path)
         if d > ln["max_duration"] or not guard.clip_fits(ln["start"], d, windows):
             ln["dropped"] = True   # never talk over speech

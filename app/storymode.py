@@ -9,13 +9,91 @@ from .config import LEAD, MIN_GAP_FLOOR, MIN_USABLE_GAP, TAIL
 
 THREAD_LINES = 4              # lines in one thread of thought before a new one begins
 TRIGGER_EVERY = 3             # a passing sight is offered on every third thought, when the scan shows one
-MIN_LPM, MAX_LPM, DEFAULT_LPM = 1.5, 10.0, 6.0
+MIN_LPM, MAX_LPM, DEFAULT_LPM = 1.5, 10.0, 4.5
 MIN_WORDS = 2
 SETTLE = 2.5               # after a fight, a shop or a conversation the story waits this long before it speaks again
 LEAVE = 1.0                # and it stops this long before the next one starts
 MAX_SECONDS = 11.0
 BLOCKING = {"damage_taken", "damage_dealt", "kill", "fall", "crash", "death", "loot", "harvest", "craft", "build",
             "npc_contact", "animal_contact", "reward", "score"}      # doing something else: the story waits
+
+
+# ---- the told story: passages of a few plain sentences, then quiet
+PASSAGE_LINES = (3, 4, 3, 4)      # lines in each passage in turn
+LINE_WORDS = (16, 18, 14, 20)     # about this many words in the lines of a passage in turn
+PLAN_WPS = 2.1                    # planned speaking speed: a little slower than real, so the voice always fits with room to breathe
+PAUSE = 1.1                       # between lines of one passage
+QUIET_MIN = 6.0                   # at least this much silence after a passage
+MAX_PASSAGES = 12
+
+
+def line_seconds(words):
+    return words / PLAN_WPS + 0.5
+
+
+def passages(notes, free, length, lpm, avoid=()):
+    """[[(t, seconds, words), ...], ...]: passages of a story, each a few lines said one after the other, then quiet, through
+    the travel stretches and the free gaps (never over speech, a cutscene or the ranges to avoid). The lines-a-minute sets how
+    long the quiet after each passage is: one passage and its quiet last about (lines x 60 / lines-a-minute) seconds."""
+    free = [g for g in free]
+    for a, b in avoid:                                          # take the welcome and the outro out of the free time
+        nxt = []
+        for g in free:
+            if b <= g["start"] or a >= g["end"]:
+                nxt.append(g)
+                continue
+            if a > g["start"]:
+                nxt.append({**g, "end": a})
+            if b < g["end"]:
+                nxt.append({**g, "start": b})
+        free = nxt
+    out, idx = [], 0
+    for a, b in stretches(notes, length):
+        for g in free:
+            lo, hi = max(a, g["start"]), min(b, g["end"])
+            t = lo + LEAD
+            while len(out) < MAX_PASSAGES and t < hi - TAIL - line_seconds(6):
+                n_lines, lines, cur = PASSAGE_LINES[idx % 4], [], t
+                for j in range(n_lines):
+                    words = LINE_WORDS[(idx + j) % 4]
+                    dur = line_seconds(words)
+                    if cur + dur > hi - TAIL:
+                        break
+                    lines.append((round(cur, 2), round(dur, 2), words))
+                    cur += dur + PAUSE
+                if len(lines) < 2:
+                    break
+                out.append(lines)
+                idx += 1
+                span = lines[-1][0] + lines[-1][1] - lines[0][0]
+                t = lines[0][0] + max(span + QUIET_MIN, n_lines * 60.0 / clamp_lpm(lpm))
+    return sorted(out, key=lambda p: p[0][0])
+
+
+def told_opps(passes, bible):
+    """The opportunities for a told story: every line of every passage, each told its part of the same story. They are quiet-travel
+    thoughts (kind daydream), so the travel-thought rule and the no-real-names check apply to them."""
+    beats_, total = bible["beats"], len(passes)
+    out = []
+    for p, lines in enumerate(passes):
+        beat = beats_[min(p, len(beats_) - 1)]
+        told = " ".join(f"({i + 1}) {b}" for i, b in enumerate(beats_[:p]))
+        for j, (t, dur, words) in enumerate(lines):
+            last_line, last_part = j == len(lines) - 1, p == total - 1
+            why = (f"STORY \"{bible['title']}\", part {p + 1} of {total}, line {j + 1} of {len(lines)}. He is telling himself a memory, in the "
+                   f"first person, in plain spoken words. " + (f"Told so far: {told}. " if told else "Nothing has been told yet. ")
+                   + f"This part tells: {beat} "
+                   + ("Begin in a plain sentence or two that picks up where the last part stopped. " if j == 0 and p else
+                      "Begin the story in the middle of ordinary life, plainly. " if j == 0 else "Carry straight on from the line before. ")
+                   + (f"This is the end of the story: land it plainly and quietly ({bible.get('ending') or 'a small true thing he took from it'}), no moral and no punchline. "
+                      if last_line and last_part else
+                      "Finish this part on a complete sentence, not a punchline; the story goes on later. " if last_line else "")
+                   + f"One or two complete, plain sentences of about {words} words. Concrete and specific, like someone telling a friend. "
+                   "No poetry, no sayings, no trailing off. Never name a real character and never state a game's story. Use emotion calm, longing, amusement or none.")
+            out.append({"id": f"s{p}_{j}", "t": t, "beat_t": None, "salience": 4.6, "kinds": ["daydream", "travel_story", "story_told"],
+                        "kind": "daydream", "why": why, "max_words": words + 4, "max_duration": round(dur + PAUSE - 0.4, 2),
+                        "travel": "story", "passage": p, "thread": bible["title"]})
+    return sorted(out, key=lambda o: o["t"])
 
 
 def clamp_lpm(value):

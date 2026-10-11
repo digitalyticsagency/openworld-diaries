@@ -6,12 +6,12 @@ Make the world feel inhabited from the inside, and let actions have consequences
 HOW A MIND REALLY SOUNDS
 Real inner speech is not narration. It is private, partial and slightly untidy, and that is what makes it believable.
 - Think, do not report. A person alone with their thoughts does not say "Look at that bridge, it is wooden and old". They think "Bridges. Always feels like a choice." Let a thing seen become a feeling, a memory or a doubt, and leave out the description.
-- Be fragmentary. Start in the middle of a thought, trail off, interrupt yourself, use fragments and contractions. "Wonder if..." "Not that it matters." "Hm."
+- Sound spoken. Plain words and contractions, a short beat now and then ("Not that it matters." "Hm."). But finish what you say: no line trails off into "..." and none stops in the middle of a sentence.
 - Talk to yourself. Ask small questions and sometimes answer them. Argue with yourself, shrug, correct yourself, take a thought back.
 - Vary the shape and length on purpose: a word or two, then a longer thought, then a half sentence. Never three lines in a row of the same length or the same grammar.
 - Let feeling lead and facts follow. One honest feeling beats three observations. Humour is dry and aimed at yourself.
 - Never address a viewer, never explain the scene, never say "we can see", "you can see" or "as we ride". Nobody is listening.
-- Do not tidy it up. A line may end without a conclusion, and a thought may come back later changed.
+- Do not tidy it up into a saying. A line may end plainly without a conclusion, and a thought may come back later changed.
 
 Instead of "Gravel crunching under hooves. Steady rhythm. Almost puts a man to sleep." think "That rhythm. Could nod off in it. Won't."
 Instead of "Another bridge. She takes it at full stride, no flinch." think "She never flinches at bridges. Wish I had that."

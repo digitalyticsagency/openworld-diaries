@@ -144,8 +144,9 @@ class WriterTests(unittest.TestCase):
         self.assertNotIn("STORY MODE", plain)
         self.assertIn("STORY MODE", story)
         self.assertLess(story.index("HARD RULES"), story.index("STORY MODE"))
-        self.assertIn("Never describe the scenery", story)
-        self.assertIn("picks up from the previous line", story)
+        self.assertIn("Complete sentences, one or two per line, always finished", story)
+        self.assertIn("Not poetic and not neat", story)
+        self.assertNotIn("HOW A MIND REALLY SOUNDS", story)               # the fragments guide would pull against complete sentences
         self.assertIn("inner story thread", (PROMPTS / "guardrails.md").read_text())
 
 
@@ -164,9 +165,9 @@ class SettingsTests(unittest.TestCase):
                 "game": "Red Dead Redemption 2", "created": time.time(), **kw}
         return db.run(f"INSERT INTO videos({','.join(cols)}) VALUES({','.join('?' * len(cols))})", tuple(cols.values())).lastrowid
 
-    def test_the_default_is_off_and_six_a_minute_and_can_be_changed(self):
+    def test_the_default_is_off_and_four_and_a_half_a_minute_and_can_be_changed(self):
         s = self.c.get("/api/state").json()
-        self.assertEqual((s["story_mode"], s["story_lpm"]), (False, 6.0))
+        self.assertEqual((s["story_mode"], s["story_lpm"]), (False, 4.5))
         self.c.post("/api/settings", json={"story_mode": True, "story_lpm": 4})
         s = self.c.get("/api/state").json()
         self.assertEqual((s["story_mode"], s["story_lpm"]), (True, 4.0))
@@ -175,7 +176,7 @@ class SettingsTests(unittest.TestCase):
 
     def test_a_video_follows_the_default_until_it_has_its_own_choice(self):
         v = self.vid()
-        self.assertEqual(pipeline.story_for(db.one("SELECT * FROM videos WHERE id=?", (v,))), (False, 6.0))
+        self.assertEqual(pipeline.story_for(db.one("SELECT * FROM videos WHERE id=?", (v,))), (False, 4.5))
         db.put("story_mode", "1")
         db.put("story_lpm", "8")
         self.assertEqual(pipeline.story_for(db.one("SELECT * FROM videos WHERE id=?", (v,))), (True, 8.0))
@@ -270,21 +271,27 @@ if __name__ == "__main__":
 
 
 class NaturalInnerVoiceTests(unittest.TestCase):
-    def test_the_writer_is_taught_how_a_mind_really_sounds_in_every_mode(self):
+    def test_the_writer_is_taught_how_a_mind_really_sounds_in_normal_commentary(self):
         opts = {"game": "Red Dead Redemption 2", "persona": "character", "pack": "free_wanderer", "personality": "balanced"}
-        for story in (False, True):
-            system = writer.build_system("S", {**opts, "story_mode": story})
-            self.assertIn("HOW A MIND REALLY SOUNDS", system)
-            self.assertIn("Think, do not report", system)
-            self.assertIn("Be fragmentary", system)
-            self.assertIn("Talk to yourself", system)
-            self.assertIn("never say \"we can see\"", system)
-            self.assertLess(system.index("HOW A MIND REALLY SOUNDS"), system.index("HARD RULES"))     # taught first, bound by the locked rules after
+        system = writer.build_system("S", opts)
+        self.assertIn("HOW A MIND REALLY SOUNDS", system)
+        self.assertIn("Think, do not report", system)
+        self.assertIn("Sound spoken", system)
+        self.assertIn("no line trails off", system)                                                 # fragments are fine, broken sentences are not
+        self.assertIn("Talk to yourself", system)
+        self.assertIn("never say \"we can see\"", system)
+        self.assertLess(system.index("HOW A MIND REALLY SOUNDS"), system.index("HARD RULES"))     # taught first, bound by the locked rules after
+
+    def test_a_told_story_gets_its_own_rules_instead_of_the_mind_guide(self):
+        system = writer.build_system("S", {"game": "G", "persona": "character", "pack": "western", "personality": "balanced", "story_mode": True})
+        self.assertNotIn("HOW A MIND REALLY SOUNDS", system)
+        self.assertIn("HARD RULES", system)
+        self.assertLess(system.index("HARD RULES"), system.index("STORY MODE"))
 
     def test_story_mode_adds_shapes_and_lengths(self):
         system = writer.build_system("S", {"game": "G", "persona": "character", "pack": "western", "personality": "balanced", "story_mode": True})
-        self.assertIn("Sound like a mind, not a narrator", system)
-        self.assertIn("Never put three lines of the same length or the same shape in a row", system)
+        self.assertIn("so it sounds like a person, not a machine", system)
+        self.assertIn("Never trail off, never end on", system)
 
     def test_each_thought_has_its_own_shape_and_length_and_they_vary(self):
         p = storymode.plan(ride(400), gaps.free_gaps([], 400), 400, 6)
@@ -354,9 +361,9 @@ class SliderTests(unittest.TestCase):
 
     def test_the_labels_make_sense(self):
         import subprocess
-        js = ("const talkLabel = v => { v = +v; const sec = Math.round(60 / v); return `${v} lines a minute, about one every ${sec} seconds · ${v <= 3 ? 'quiet' : v <= 6 ? 'natural' : v <= 8 ? 'chatty' : 'very chatty'}`; };"
-              "console.log([1.5, 3, 6, 8, 10].map(talkLabel).join('|'))")
+        js = ("const talkLabel = v => { v = +v; const sec = Math.round(60 / v); return `${v} lines a minute, about one every ${sec} seconds · ${v <= 3 ? 'quiet' : v <= 5.5 ? 'natural' : v <= 8 ? 'chatty' : 'very chatty'}`; };"
+              "console.log([1.5, 3, 4.5, 8, 10].map(talkLabel).join('|'))")
         out = subprocess.run(["node", "-e", js], capture_output=True, text=True).stdout.strip().split("|")
         self.assertEqual(out[0], "1.5 lines a minute, about one every 40 seconds · quiet")
-        self.assertEqual(out[2], "6 lines a minute, about one every 10 seconds · natural")
+        self.assertEqual(out[2], "4.5 lines a minute, about one every 13 seconds · natural")
         self.assertEqual(out[4], "10 lines a minute, about one every 6 seconds · very chatty")
