@@ -108,3 +108,60 @@ class VideoSurvivesTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PolishNeverCostsALineTests(unittest.TestCase):
+    """Video 8 planned 27 thoughts and ended with 13: the editor pass rewrote the 'weak' ones, the rewrites no longer fit their
+    slots, and the guard silently dropped them."""
+
+    def lines(self, n=6, kinds="new_place"):
+        return [{"start": 10.0 + 8 * i, "line": f"Short thought number {i}.", "persona": "character", "emotion": "calm", "max_words": 6,
+                 "max_duration": 3.5, "opp_id": f"b{i}", "beat_kinds": kinds, "silent": False} for i in range(n)]
+
+    def judge(self, n, score=3):
+        return json.dumps([{"i": i, "overall": score, "fix": "make it richer"} for i in range(n)])
+
+    def test_rewrites_that_do_not_fit_are_ignored_and_no_line_is_lost(self):
+        too_long = json.dumps([{"i": i, "line": "A much longer and richer rewrite of the thought that cannot possibly fit the slot."} for i in range(6)])
+        with mock.patch("app.evolve.claude", side_effect=[self.judge(6), too_long]):
+            out = evolve.refine(self.lines(), [], [], "sys")
+        self.assertEqual(len(out), 6)
+        self.assertEqual([l["line"] for l in out], [f"Short thought number {i}." for i in range(6)])
+
+    def test_rewrites_that_fit_are_used(self):
+        short = json.dumps([{"i": i, "line": f"Better {i}."} for i in range(6)])
+        with mock.patch("app.evolve.claude", side_effect=[self.judge(6), short]):
+            out = evolve.refine(self.lines(), [], [], "sys")
+        self.assertEqual([l["line"] for l in out], [f"Better {i}." for i in range(6)])
+
+    def test_a_mix_keeps_every_line(self):
+        mix = json.dumps([{"i": 0, "line": "Better zero."}, {"i": 1, "line": "x " * 30}, {"i": 2, "line": "Better two."}])
+        with mock.patch("app.evolve.claude", side_effect=[self.judge(6), mix]):
+            out = evolve.refine(self.lines(), [], [], "sys")
+        self.assertEqual(len(out), 6)
+        self.assertEqual(out[0]["line"], "Better zero.")
+        self.assertEqual(out[1]["line"], "Short thought number 1.")
+
+    def test_inner_story_thoughts_are_never_rewritten_even_when_the_judge_calls_them_weak(self):
+        with mock.patch("app.evolve.claude", side_effect=[self.judge(6)]) as c:
+            out = evolve.refine(self.lines(kinds="daydream,travel_story"), [], [], "sys")
+        self.assertEqual(c.call_count, 1)                                                   # only the judge was asked
+        self.assertEqual(len(out), 6)
+        self.assertEqual(out[0]["line"], "Short thought number 0.")
+
+    def test_a_line_the_polish_pushed_into_trouble_comes_back_as_written(self):
+        """A rewrite that fits its own slot but is still dropped later must not take the line with it."""
+        ok = json.dumps([{"i": 1, "line": "Better one."}])
+        real = evolve.guard.enforce
+        calls = []
+
+        def picky(lines, *a, **k):
+            calls.append(len(lines))
+            if len(calls) == 1:
+                kept, dropped = real([l for l in lines if l["line"] != "Better one."], *a, **k)
+                return kept, [{**l, "reason": "too close to previous line"} for l in lines if l["line"] == "Better one."]
+            return real(lines, *a, **k)
+        with mock.patch("app.evolve.claude", side_effect=[self.judge(6, 7).replace("7", "3", 1), ok]), mock.patch("app.evolve.guard.enforce", side_effect=picky):
+            out = evolve.refine(self.lines(), [], [], "sys")
+        self.assertEqual(len(out), 6)
+        self.assertEqual(out[1]["line"], "Short thought number 1.")

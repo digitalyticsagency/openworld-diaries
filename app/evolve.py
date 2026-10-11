@@ -52,17 +52,30 @@ def refine(lines, scenes, windows, system, min_gap=None, blocks=None):
     by_i = {s["i"]: s for s in scores if isinstance(s, dict) and isinstance(s.get("i"), int)}
     for i, l in enumerate(lines):
         l["self_score"] = float(by_i.get(i, {}).get("overall", 6))
+    # An inner-story thought is meant to be a fragment; the editor's urge to tidy it is exactly what makes it less like a mind.
     weak = [{"i": i, "line": l["line"], "fix": by_i.get(i, {}).get("fix", "")}
-            for i, l in enumerate(lines) if l["self_score"] < WEAK]
+            for i, l in enumerate(lines) if l["self_score"] < WEAK and "travel_story" not in (l.get("beat_kinds") or "")]
+    original = {id(l): l["line"] for l in lines}
     if weak:
         rew = parse_json(claude(system, "Rewrite these weak lines. Keep each one's time, persona and "
                                         "emotion, apply the fix, obey every hard rule. Return JSON "
                                         '[{"i": index, "line": "new text"}] only.\n' + json.dumps(weak)))
         for r in rew if isinstance(rew, list) else []:
             if isinstance(r, dict) and isinstance(r.get("i"), int) and 0 <= r["i"] < len(lines) and r.get("line"):
-                lines[r["i"]]["line"] = r["line"]
-                lines[r["i"]]["self_score"] = WEAK  # unproven until a human rates it
-    kept, _ = guard.enforce(lines, windows, scenes, min_gap=min_gap, blocks=blocks)
+                l, new = lines[r["i"]], str(r["line"]).strip()
+                if len(new.split()) > (l.get("max_words") or guard.MAX_WORDS) or guard.est_duration(new) > (l.get("max_duration") or 99):
+                    continue      # a rewrite that no longer fits its slot is not used: the original stays
+                l["line"] = new
+                l["self_score"] = WEAK  # unproven until a human rates it
+    kept, dropped = guard.enforce(lines, windows, scenes, min_gap=min_gap, blocks=blocks)
+    if dropped:                   # the polish must never cost a line: whatever it lost comes back as it was written
+        gone = {d["start"] for d in dropped}
+        back = []
+        for l in lines:
+            if l["start"] in gone and id(l) in original:
+                l["line"] = original[id(l)]
+                back.append(l)
+        kept, _ = guard.enforce(kept + back, windows, scenes, min_gap=min_gap, blocks=blocks)
     return kept
 
 
