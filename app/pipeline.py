@@ -474,7 +474,7 @@ def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=Non
     chosen, blocked, possible = plan_commentary(all_beats, free, cutscenes.subtract_ranges(speech, blocks), length,
                                                 eager, target_lpm(), cap_commentary(), extra=extra, quiet_fn=quiet_fn,
                                                 travel_gap=travel_gap())
-    chosen_themes = thinking.clean_ids(json.loads(v["themes"] or "[]")) if v.get("themes") else []
+    chosen_themes = thinking.for_video(v)
     travel_kinds = travel.assign(chosen, notes, channel.themes_for(opts["character"]),
                                  reflect=thinking.prompts(chosen_themes) or None, note=thinking.clean_note(v.get("theme_note")) if chosen_themes else "")
     n_catch = channel.assign_catchphrases(chosen, cfg["phrases"], length, vid) if cfg["catch_on"] else 0

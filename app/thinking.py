@@ -79,6 +79,28 @@ def clean_note(text):
     return t[:MAX_NOTE]
 
 
+def defaults():
+    """The owner's favourite themes, used for any video that has no choice of its own."""
+    import json
+    from . import db
+    try:
+        return clean_ids(json.loads(db.get("default_themes", "[]")))
+    except ValueError:
+        return []
+
+
+def for_video(row):
+    """The themes for one video: its own choice (even an empty one) if it has been made, else the favourites."""
+    import json
+    raw = row.get("themes") if row else None
+    if raw is None:
+        return defaults()
+    try:
+        return clean_ids(json.loads(raw))
+    except ValueError:
+        return defaults()
+
+
 def catalog():
     return [{"id": k, "name": v["name"]} for k, v in THEMES.items()]
 

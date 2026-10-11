@@ -199,3 +199,67 @@ class PageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FavouriteThemesTests(unittest.TestCase):
+    def setUp(self):
+        self.c = TestClient(app)
+        db.put("default_themes", "[]")
+
+    def tearDown(self):
+        db.put("default_themes", "[]")
+
+    def vid(self, themes=None):
+        return db.run("INSERT INTO videos(drive_id,name,status,created,pack,game,themes) VALUES(?,?,?,?,?,?,?)",
+                      (f"fv{time.time_ns()}", "x.mp4", "queued", 1.0, "western", "Red Dead Redemption 2", themes)).lastrowid
+
+    def test_the_favourites_are_saved_cleaned_and_shown(self):
+        self.assertEqual(self.c.get("/api/state").json()["default_themes"], [])
+        self.assertEqual(self.c.post("/api/settings", json={"default_themes": ["work", "family", "nonsense", "family"]}).status_code, 200)
+        self.assertEqual(self.c.get("/api/state").json()["default_themes"], ["family", "work"])
+        self.c.post("/api/settings", json={"default_themes": ["all"]})
+        self.assertEqual(len(self.c.get("/api/state").json()["default_themes"]), 8)
+        self.c.post("/api/settings", json={"default_themes": []})
+        self.assertEqual(self.c.get("/api/state").json()["default_themes"], [])
+
+    def test_a_video_with_no_choice_uses_the_favourites_and_its_own_choice_wins_even_when_empty(self):
+        db.put("default_themes", json.dumps(["future", "past"]))
+        self.assertEqual(thinking.for_video({"themes": None}), ["future", "past"])
+        self.assertEqual(thinking.for_video({"themes": json.dumps(["work"])}), ["work"])
+        self.assertEqual(thinking.for_video({"themes": "[]"}), [])                          # cleared on purpose: no theme
+        self.assertEqual(thinking.for_video({"themes": "junk{"}), ["future", "past"])
+        self.assertEqual(thinking.for_video(None), ["future", "past"])
+        db.put("default_themes", "not json")
+        self.assertEqual(thinking.defaults(), [])
+
+    def test_the_planner_gets_the_favourites_for_a_video_that_has_no_choice(self):
+        db.put("default_themes", json.dumps(["gratitude"]))
+        seen = []
+
+        def spy(chosen, notes, themes=None, reflect=None, note=""):
+            seen.append(reflect)
+            return {}
+        for themes in (None, "[]"):
+            vid = self.vid(themes)
+            work = pipeline.workdir(vid)
+            work.mkdir(parents=True)
+            (work / "source.mp4").write_bytes(b"x")
+            (work / "scenes.json").write_text(json.dumps([frame(t) for t in range(0, 300, 3)]))
+            (work / "transcript.json").write_text("[]")
+            with mock.patch("app.pipeline.scenes.video_length", return_value=300.0), \
+                    mock.patch("app.pipeline.ensure_cuts", return_value=cutscenes.empty()), \
+                    mock.patch("app.pipeline.sentiment.ensure", return_value=[]), \
+                    mock.patch("app.pipeline.travel.assign", side_effect=spy), \
+                    mock.patch("app.pipeline.writer.write_lines", return_value=([], [])), \
+                    mock.patch("app.pipeline.writer.fill_missed", side_effect=lambda *a, **k: (a[4], 0)), \
+                    mock.patch("app.pipeline.evolve.refine", side_effect=lambda lines, *a, **k: lines), \
+                    mock.patch("app.pipeline.voice.make_clips", side_effect=RuntimeError("stop here")):
+                pipeline.regenerate(vid)
+        self.assertEqual([lab for lab, _ in seen[0][:1]], ["Gratitude and small joys"])      # no choice of its own: the favourites
+        self.assertIsNone(seen[1])                                                           # chose none: no reflection
+
+    def test_the_page_pre_ticks_the_favourites_and_can_save_them(self):
+        from app.config import ROOT
+        html = (ROOT / "app" / "static" / "index.html").read_text()
+        for needle in ("My favourite thinking themes", "id=\"favthemes\"", "themes: DEFAULT_THEMES.slice()", "Save as my favourites", "data-savefav", "data-favall", "renderFavThemes"):
+            self.assertIn(needle, html)

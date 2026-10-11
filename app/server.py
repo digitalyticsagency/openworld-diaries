@@ -125,6 +125,7 @@ class Settings(BaseModel):
     daydream: bool | None = None
     hook_on: bool | None = None
     series_on: bool | None = None
+    default_themes: list[str] | None = None
     ambience_on: bool | None = None
     music_mode: str | None = None
     calm_mode: bool | None = None
@@ -235,7 +236,7 @@ def state():
         "music_mode": pipeline.music_mode(), "own_music": (pipeline.own_music_path().name if pipeline.own_music_path() else None),
         "calm_mode": pipeline.calm_on(),
         "ambience_on": pipeline.ambience_on(), "game_audio": int(round(pipeline.game_audio_level() * 100)),
-        "think_themes": thinking.catalog(),
+        "think_themes": thinking.catalog(), "default_themes": thinking.defaults(),
         "series_on": series.enabled(), "series_name": series.name(),
         "moral_mode": pipeline.moral_mode(),
         "knowledge_on": db.get("knowledge_on", "1") == "1",
@@ -381,6 +382,8 @@ def settings(s: Settings):
         elif k in ("youtube_publish", "learn", "ask_style", "ab_test", "cap_commentary", "cap_dialogue", "cutscene_quiet", "one_voice",
                     "daydream", "intro_on", "outro_on", "catch_on", "knowledge_on", "hook_on", "cliff_on", "series_on", "ambience_on", "calm_mode"):
             v = "1" if v else "0"
+        elif k == "default_themes":
+            v = json.dumps(thinking.clean_ids(v))
         elif k == "music_mode":
             if v not in pipeline.MUSIC_MODES:
                 raise HTTPException(400, "music_mode must be keep, lower, ambience or own.")

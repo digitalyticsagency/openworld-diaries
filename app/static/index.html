@@ -168,6 +168,9 @@
     </fieldset>
     <fieldset class="grp"><legend>Pacing and what it reacts to</legend>
       <label class="sw"><input type="checkbox" id="calm_on" role="switch"><span><strong>Calm free-roam pace</strong><br><span class="small">For relaxed exploring videos: only the strongest moments get a line, thoughts on the road are at least 55 seconds apart, and the long stretches stay quiet. Pick one of the "Free roam" styles for the matching tone.</span></span></label>
+      <div class="grp-sub"><strong>My favourite thinking themes</strong> <span class="small">Ticked for every new video (you can change them per video). Only the quiet thoughts on the road follow them.</span>
+        <div id="favthemes" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:4px 14px;margin:6px 0"></div>
+        <div class="acts"><button type="button" class="s" data-favall="1">Mix of everything</button><button type="button" class="s" data-favnone="1">Clear</button></div></div>
       <label class="sw"><input type="checkbox" id="dayd" role="switch"><span><strong>Thoughts during quiet travel</strong><br><span class="small">Only while walking or riding with nothing to react to. The brain rotates five kinds: noticing something it really saw, how the trip feels (the hour, the weather, how long it has been), a warm thought about the horse, a memory of something earlier in the same video, and a wistful daydream (generic, never naming a story character). Everywhere else it stays silent unless something real happens: a shop, an animal, a fight, a choice, or someone speaking to him.</span></span></label>
       <div class="row"><div><label for="tlpm">Travel thoughts a minute (0 = automatic, about one every 30 seconds)</label>
         <input type="number" id="tlpm" min="0" max="6" step="0.5" value="0" style="width:110px"></div></div>
@@ -351,15 +354,19 @@ function refreshPreview() {
   }, 120);
 }
 function markOneVoice() { for (const p of ['player', 'companion']) { const sel = $('v_' + p); if (sel) sel.disabled = ONEVOICE; sel && (sel.title = ONEVOICE ? 'Not used while one consistent voice is on' : ''); } }
-let CAT = {packs: [], personalities: [], themes: []}, PERSONALITY = 'balanced', VOICES = [], VIDEOS = [];
+let DEFAULT_THEMES = [], CAT = {packs: [], personalities: [], themes: []}, PERSONALITY = 'balanced', VOICES = [], VIDEOS = [];
 const vname = id => (VOICES.find(v => v.id === id) || {}).name || 'a voice';
 const CHOOSE = {};
 const opt = (list, sel) => list.map(x => `<option value="${x.id}" ${x.id===sel?'selected':''}>${esc(x.name)}</option>`).join('');
 const packName = id => (CAT.packs.find(p => p.id === id) || {}).name || 'Western outlaw';
 const persName = id => (CAT.personalities.find(p => p.id === id) || {}).name || 'Balanced';
 
+function renderFavThemes() {
+  const box = $('favthemes'); if (!box) return;
+  box.innerHTML = CAT.themes.map(t => `<label class="rad"><input type="checkbox" data-fav="${t.id}" ${DEFAULT_THEMES.includes(t.id) ? 'checked' : ''}> <span>${esc(t.name)}</span></label>`).join('');
+}
 function thinkingBoxInner(v) {
-  let mine = []; try { mine = JSON.parse(v.themes || '[]'); } catch (_) {}
+  let mine = DEFAULT_THEMES; if (v.themes != null) { try { mine = JSON.parse(v.themes); } catch (_) {} }
   const r = REGEN[v.id] || {}, chosen = r.themes ?? mine, note = r.theme_note ?? v.theme_note ?? '';
   return `<div class="themes" style="display:grid;gap:3px;margin:6px 0;max-width:340px">${CAT.themes.map(t => `<label class="rad"><input type="checkbox" data-regth="${v.id}:${t.id}" ${chosen.includes(t.id) ? 'checked' : ''}> <span>${esc(t.name)}</span></label>`).join('')}</div>
     <div class="acts"><button type="button" class="s" data-allth="regth:${v.id}">Mix of everything</button><button type="button" class="s" data-noneth="regth:${v.id}">Clear</button></div>
@@ -369,13 +376,13 @@ function thinkingBox(id, chosen, note, boxAttr, noteAttr) {
   return `<details class="thinking"${chosen.length || note ? ' open' : ''}><summary>What is he thinking about on quiet travel? (optional)</summary>
     <div class="small">Pick as many as you like. Only the quiet thoughts while riding or walking follow this; reactions to fights, shops and animals stay about what happens.</div>
     <div class="themes" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:4px 14px;margin:6px 0">${CAT.themes.map(t => `<label class="rad"><input type="checkbox" data-${boxAttr}="${id}:${t.id}" ${chosen.includes(t.id) ? 'checked' : ''}> <span>${esc(t.name)}</span></label>`).join('')}</div>
-    <div class="acts"><button type="button" class="s" data-allth="${boxAttr}:${id}">Mix of everything</button><button type="button" class="s" data-noneth="${boxAttr}:${id}">Clear</button></div>
+    <div class="acts"><button type="button" class="s" data-allth="${boxAttr}:${id}">Mix of everything</button><button type="button" class="s" data-noneth="${boxAttr}:${id}">Clear</button><button type="button" class="s" data-savefav="${boxAttr}:${id}" title="Use these themes for every new video from now on">Save as my favourites</button></div>
     <label>Or in your own words (a feeling, never a fact)</label><input data-${noteAttr}="${id}:theme_note" value="${esc(note)}" maxlength="200" placeholder="for example: missing his brother, wondering about a quiet life">
   </details>`;
 }
 function chooser(v) {
   let sug = {}; try { sug = JSON.parse(v.suggestion || '{}'); } catch (_) {}
-  const c = CHOOSE[v.id] ||= { themes: [], theme_note: '', pack: sug.pack || 'western', personality: PERSONALITY,
+  const c = CHOOSE[v.id] ||= { themes: DEFAULT_THEMES.slice(), theme_note: '', pack: sug.pack || 'western', personality: PERSONALITY,
     game: v.game || (sug.game && sug.game !== 'unknown' ? sug.game : '') };
   return `<div class="choose"><div class="small">Detected: <strong>${esc(sug.game || 'unknown')}</strong>${sug.confidence != null ? ` (${Math.round(sug.confidence*100)}% sure)` : ''}. ${esc(sug.reason || '')}</div>
     <div class="row"><div><label>Game</label><input data-ch="${v.id}:game" value="${esc(c.game)}"></div>
@@ -485,7 +492,7 @@ async function load() {
     ready = true;
     $('folder').value = s.folder_id;
     for (const k of ['game','persona','character','story_point','voice_notes']) $(k).value = s.options[k] || '';
-    CAT = { packs: s.packs, personalities: s.personalities, themes: s.think_themes }; PERSONALITY = s.personality;
+    CAT = { packs: s.packs, personalities: s.personalities, themes: s.think_themes }; DEFAULT_THEMES = s.default_themes || []; renderFavThemes(); PERSONALITY = s.personality;
     $('personality').innerHTML = opt(CAT.personalities, s.personality);
     $('vpack').innerHTML = opt(CAT.packs, 'western'); loadVoices();
     setAmount(s.amount); $('yt').checked = s.youtube_publish; $('learn').checked = s.learn; $('ask').checked = s.ask_style; $('ab').checked = s.ab_test; fillCaptions(s); fillChannel(s); $('cutq').checked = s.cutscene_quiet; $('onev').checked = s.one_voice; ONEVOICE = s.one_voice; markOneVoice(); $('cap_com').checked = s.cap_commentary; $('cap_dlg').checked = s.cap_dialogue;
@@ -671,7 +678,9 @@ document.addEventListener('change', async e => {
   const d = e.target.dataset;
   try {
     if (d.regsel) { const [id, f] = d.regsel.split(':'); (REGEN[id] ||= {})[f] = e.target.value; }
-    if (d.regth) { const [id, tid] = d.regth.split(':'); const v = VIDEOS.find(x => x.id == id) || {}; let mine = []; try { mine = JSON.parse(v.themes || '[]'); } catch (_) {}
+    if (d.fav) { const cur = new Set(DEFAULT_THEMES); e.target.checked ? cur.add(d.fav) : cur.delete(d.fav); const ids = CAT.themes.map(t => t.id).filter(i => cur.has(i));
+      try { await api('settings', { default_themes: ids }); DEFAULT_THEMES = ids; say('Saved: new videos start with these themes ticked.'); } catch (err) { say(err.message, true); } }
+    if (d.regth) { const [id, tid] = d.regth.split(':'); const v = VIDEOS.find(x => x.id == id) || {}; let mine = DEFAULT_THEMES; if (v.themes != null) { try { mine = JSON.parse(v.themes); } catch (_) {} }
       const cur = new Set((REGEN[id] ||= {}).themes ?? mine); e.target.checked ? cur.add(tid) : cur.delete(tid); REGEN[id].themes = [...cur]; }
     if (d.chth) { const [id, tid] = d.chth.split(':'); const c = (CHOOSE[id] ||= {}); const cur = new Set(c.themes || []); e.target.checked ? cur.add(tid) : cur.delete(tid); c.themes = [...cur]; }
     if (d.ch) { const [id, f] = d.ch.split(':'); (CHOOSE[id] ||= {})[f] = e.target.value; }
@@ -693,6 +702,10 @@ document.addEventListener('click', async e => {
     if (d.repskip) { await api(`replies/${d.repskip}/skip`, {}); for (const id of MOPEN) showComments(id); }
     if (d.clips) { const id = +d.clips; COPEN.has(id) ? COPEN.delete(id) : COPEN.add(id); if (COPEN.has(id)) showClips(id); else $('k'+id).innerHTML=''; }
     if (d.mkclips) { try { await api(`videos/${d.mkclips}/clips`, {}); say('Cutting the clips. This takes a few minutes.'); COPEN.add(+d.mkclips); await refresh(); } catch (e) { say(e.message, true); } }
+    if (d.savefav) { const [kind, id] = d.savefav.split(':'); const ids = [...document.querySelectorAll(`input[data-${kind}^="${id}:"]:checked`)].map(b => b.dataset[kind].split(':')[1]);
+      try { await api('settings', { default_themes: ids }); DEFAULT_THEMES = ids; renderFavThemes(); say(ids.length ? 'Saved: new videos start with these themes ticked.' : 'Saved: new videos start with no theme.'); } catch (err) { say(err.message, true); } }
+    if (d.favall !== undefined || d.favnone !== undefined) { const ids = d.favall !== undefined ? CAT.themes.map(t => t.id) : [];
+      try { await api('settings', { default_themes: ids }); DEFAULT_THEMES = ids; renderFavThemes(); say(ids.length ? 'Every theme is now your favourite mix.' : 'Favourites cleared.'); } catch (err) { say(err.message, true); } }
     if (d.allth || d.noneth) { const [kind, id] = (d.allth || d.noneth).split(':'), all = !!d.allth, ids = all ? CAT.themes.map(t => t.id) : [];
       document.querySelectorAll(`input[data-${kind}^="${id}:"]`).forEach(b => { b.checked = all; });
       if (kind === 'chth') (CHOOSE[id] ||= {}).themes = ids; else (REGEN[id] ||= {}).themes = ids;
