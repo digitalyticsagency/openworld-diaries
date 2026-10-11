@@ -3,6 +3,11 @@ from .config import PROMPTS
 
 PACKS = [
     # the first pack whose words appear in the game name wins, so the narrower names come first
+    {"match": ("red dead redemption 2", "red dead redemption ii", "rdr2", "rdr 2", "red dead 2", "red dead online"),
+     "file": "rdr2.md", "name": "Red Dead Redemption 2", "character": "Arthur Morgan",
+     "notes": "Weary outlaw, loyal, brave, rescuing, winning"},
+    {"match": ("red dead redemption", "rdr1", "rdr 1", "red dead 1", "undead nightmare"), "file": "rdr1.md", "name": "Red Dead Redemption",
+     "character": "John Marston", "notes": "Gravelly, laconic, weathered, loyal to his family, dry and honest about his past"},
     {"match": ("red dead",), "file": "rdr2.md", "name": "Red Dead Redemption 2", "character": "Arthur Morgan",
      "notes": "Weary outlaw, loyal, brave, rescuing, winning"},
     {"match": ("grand theft auto vi", "grand theft auto 6", "gta vi", "gta 6", "gta6"), "file": "gta6.md", "name": "Grand Theft Auto VI",

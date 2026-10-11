@@ -343,7 +343,8 @@ function chooser(v) {
   return `<div class="choose"><div class="small">Detected: <strong>${esc(sug.game || 'unknown')}</strong>${sug.confidence != null ? ` (${Math.round(sug.confidence*100)}% sure)` : ''}. ${esc(sug.reason || '')}</div>
     <div class="row"><div><label>Game</label><input data-ch="${v.id}:game" value="${esc(c.game)}"></div>
     <div><label>Genre style</label><select data-ch="${v.id}:pack">${opt(CAT.packs, c.pack)}</select></div>
-    <div><label>Personality</label><select data-ch="${v.id}:personality">${opt(CAT.personalities, c.personality)}</select></div></div>
+    <div><label>Personality</label><select data-ch="${v.id}:personality">${opt(CAT.personalities, c.personality)}</select></div>
+    <div><label>Character (optional)</label><input data-ch="${v.id}:character" value="${esc(c.character || '')}" placeholder="for example: John Marston" maxlength="60"></div></div>
     <div class="acts"><button class="s primary" data-startstyle="${v.id}">Start commentary</button><span class="small">The paid scan only begins when you press this.</span></div></div>`;
 }
 
@@ -380,7 +381,7 @@ function card(v) {
   if (v.status === 'choose_style')
     return `<div class="vid">${head}${chooser(v)}<div class="acts"><button class="s danger" data-del="${v.id}">Delete</button></div></div>`;
   const r = REGEN[v.id] || {};
-  const style = v.pack ? `<span class="small">${v.episode ? 'Episode ' + v.episode + ' · ' : ''}${esc(packName(v.pack))} · ${esc(persName(v.personality))}${v.game ? ' · ' + esc(v.game) : ''}</span>` : '';
+  const style = v.pack ? `<span class="small">${v.episode ? 'Episode ' + v.episode + ' · ' : ''}${v.character ? 'as ' + esc(v.character) + ' · ' : ''}${esc(packName(v.pack))} · ${esc(persName(v.personality))}${v.game ? ' · ' + esc(v.game) : ''}</span>` : '';
   return `<div class="vid">${head}${style}
     <div class="acts">
       ${v.has_video && !busy ? `<a class="s" href="/api/videos/${v.id}/download" download>Download video</a>` : ''}
@@ -392,6 +393,7 @@ function card(v) {
       ${!busy && v.has_video ? `
         <select data-regsel="${v.id}:amount" aria-label="Commentary amount"><option value="">Same eagerness</option><option value="4" ${r.amount==='4'?'selected':''}>Sparse</option><option value="8" ${r.amount==='8'?'selected':''}>Balanced</option><option value="10" ${r.amount==='10'?'selected':''}>Chatty</option></select>
         <select data-regsel="${v.id}:pack" aria-label="Genre style"><option value="">Same style</option>${opt(CAT.packs, r.pack)}</select>
+        <input data-regsel="${v.id}:character" aria-label="Character for this video" placeholder="Character (e.g. John Marston)" maxlength="60" value="${esc(r.character ?? v.character ?? '')}" style="width:210px">
         <select data-regsel="${v.id}:personality" aria-label="Personality"><option value="">Same personality</option>${opt(CAT.personalities, r.personality)}</select>
         <button class="s" data-regen="${v.id}" title="Write new commentary with the settings next to it">Regenerate commentary</button>
         <button class="s" data-rerender="${v.id}" title="Re-voice and re-mix the current lines into a fresh video, with the game audio and music kept">Rebuild video</button>
@@ -637,9 +639,9 @@ document.addEventListener('click', async e => {
     if (d.lines) { const id = +d.lines; OPEN.has(id) ? OPEN.delete(id) : OPEN.add(id); if (OPEN.has(id)) showLines(id); else $('l'+id).innerHTML=''; }
     if (d.approve && confirm('Make this video public on YouTube?')) { await api(`videos/${d.approve}/approve`, {}); say('Published.'); await refresh(); }
     if (d.retry) { await api(`videos/${d.retry}/retry`, {}); await refresh(); }
-    if (d.regen) { const r = REGEN[d.regen] || {}, b = {}; if (r.amount) b.amount = +r.amount; if (r.pack) b.pack = r.pack; if (r.personality) b.personality = r.personality;
+    if (d.regen) { const r = REGEN[d.regen] || {}, b = {}; if (r.amount) b.amount = +r.amount; if (r.pack) b.pack = r.pack; if (r.personality) b.personality = r.personality; if (r.character !== undefined) b.character = r.character;
       await api(`videos/${d.regen}/regenerate`, b); say('Regenerating the commentary from the saved scan...'); await refresh(); }
-    if (d.startstyle) { const c = CHOOSE[d.startstyle]; await api(`videos/${d.startstyle}/start`, { pack: c.pack, personality: c.personality, game: c.game }); delete CHOOSE[d.startstyle]; say('Started.'); await refresh(); }
+    if (d.startstyle) { const c = CHOOSE[d.startstyle]; await api(`videos/${d.startstyle}/start`, { pack: c.pack, personality: c.personality, game: c.game, character: c.character || '' }); delete CHOOSE[d.startstyle]; say('Started.'); await refresh(); }
     if (d.dens) { const [id, val] = d.dens.split(':'); await api(`videos/${id}/density`, { value: +val }); say('Thanks. The brain adjusts how eager it is for this genre style.'); await refresh(); }
     if (d.changevoices) { $('vpack').value = d.changevoices; await loadVoices(); $('vpack').scrollIntoView({ behavior: 'smooth', block: 'center' }); say('Choose the voices for this style, then press Rebuild video.'); }
     if (d.fixstyle) { const [id, pk] = d.fixstyle.split(':'); await api(`videos/${id}/regenerate`, { pack: pk }); say('Regenerating in the right style...'); await refresh(); }

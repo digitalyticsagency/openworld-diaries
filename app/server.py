@@ -154,6 +154,7 @@ class Regen(BaseModel):
     pack: str | None = None
     personality: str | None = None
     game: str | None = None
+    character: str | None = None
 
 
 class KeyValue(BaseModel):
@@ -173,6 +174,7 @@ class Start(BaseModel):
     pack: str
     personality: str = "balanced"
     game: str | None = None
+    character: str | None = None
 
 
 class Assign(BaseModel):
@@ -242,7 +244,7 @@ def state():
                     "cut_count": len(cutscenes.effective(cutscenes.load(v["cutscenes"]))),
                     "cut_seconds": cutscenes.total_seconds(cutscenes.effective(cutscenes.load(v["cutscenes"])))} for v in db.rows(
             "SELECT id,name,status,error,self_score,combined_score,yt_video_id,pack,personality,game,suggestion,cutscenes,"
-            "status_at,started_at,progress,density_rating,stats,arm,episode "
+            "status_at,started_at,progress,density_rating,stats,arm,episode,character "
             "FROM videos ORDER BY id DESC LIMIT 50")],
         "brain": {"bias": {p: evolve.density_bias(p) for p in styles.PACKS if evolve.density_bias(p)},
                   "kind_weights": evolve.kind_weights()},
@@ -553,7 +555,7 @@ def regenerate(vid: int, r: Regen):
     if not (pipeline.workdir(vid) / "scenes.json").exists():
         raise HTTPException(400, "The saved scan is missing; use Retry to process it again.")
     pipeline.set_status(vid, "writing")
-    run_bg(pipeline.regenerate, vid, r.amount, r.persona, r.pack, r.personality, r.game)
+    run_bg(pipeline.regenerate, vid, r.amount, r.persona, r.pack, r.personality, r.game, r.character)
     return {"ok": True}
 
 
@@ -697,7 +699,7 @@ def start_video(vid: int, s: Start):
     v = idle_video(vid)
     if v["status"] != "choose_style":
         raise HTTPException(400, "This video is not waiting for a style.")
-    pipeline.start(vid, s.pack, s.personality, s.game)
+    pipeline.start(vid, s.pack, s.personality, s.game, s.character)
     pipeline.set_status(vid, "queued")
     run_bg(pipeline.process, vid)
     return {"ok": True}

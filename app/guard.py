@@ -99,7 +99,7 @@ GREETING = re.compile(r"\b(welcome to|welcome back|hello everyone|hi everyone|he
                       r"like and subscribe|subscribe|smash that)\b", re.I)
 CANON = re.compile(r"\b(mary|eliza|isaac|dutch|hosea|john|abigail|jack|sadie|micah|javier|bill|karen|tilly|charles|molly|uncle|"
                    r"pearson|strauss|sean|lenny|trelawny|kieran|susan|leopold|annabelle|"
-                   r"franklin|trevor|lamar|lester|amanda|tracey|devin|simeon|lucia|jason)\b", re.I)
+                   r"franklin|trevor|lamar|lester|amanda|tracey|devin|simeon|lucia|jason|marston|morgan|williamson|ross)\b", re.I)
 
 
 CLICKBAIT = re.compile(r"(you won'?t believe|shocking|mind[- ]?blow|never seen anything like|changed everything|nobody expected|"

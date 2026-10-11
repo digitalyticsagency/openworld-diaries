@@ -83,6 +83,9 @@ A window never runs into a cutscene, never cuts a spoken line in half, and never
 ## Grand Theft Auto
 GTA V and GTA VI have their own knowledge packs and ten styles. The scan also reads the **wanted stars** shown on screen: two stars or more make a moment, a rise makes it stronger, a chase is never "quiet travel", and fear during a chase counts as grounded. The GTA VI pack is deliberately thin: it says only what the scene shows and claims nothing about its story, characters or map. The saved character and voice notes are the Red Dead ones by default, so for another game with a pack they are swapped for that game's own unless you set your own. Driving chapters are named "Driving".
 
+## John Marston
+Red Dead Redemption (the first game) has its own knowledge pack and speaks as **John Marston**: laconic, weathered, loyal to his family. Red Dead Redemption 2's pack also has a short note for the epilogue, where the player controls him. Every video can also have its own **Character** (optional box when you confirm the style, and next to Regenerate), for example John Marston for the epilogue of a Red Dead 2 video, while other videos keep your saved character. A character chosen for one video never changes the saved one, and John's surname is kept out of daydreams like the other story names.
+
 ## Caption looks
 
 Dialogue subtitles and the inner voice each have their own style and position, chosen in Voice with a live preview on a frame of your own video.

@@ -27,11 +27,13 @@ def video_opts(v):
         o["game"] = v["game"]
     o["pack"] = styles.pack_id(v.get("pack"))
     d, rdr = knowledge.defaults_for(o["game"]), knowledge.PACKS[0]
-    if d and d is not rdr:      # the saved character and voice notes are the Red Dead ones: they must not follow another game
+    if d and d["name"] != rdr["name"]:      # the saved character and voice notes are the Arthur ones: they must not follow another game
         if o["character"].strip().lower() == rdr["character"].lower():
             o["character"] = d["character"] or knowledge.FALLBACK_CHARACTER
         if o["voice_notes"].strip().lower() == rdr["notes"].lower():
             o["voice_notes"] = d["notes"]
+    if (v.get("character") or "").strip():      # a character chosen for this one video wins over everything
+        o["character"] = v["character"].strip()
     if one_voice() and o["persona"] == "mixed":
         o["persona"] = "character"   # one steady first-person voice, not three alternating ones
     o["personality"] = styles.personality_id(v.get("personality") or db.get("personality"))
@@ -57,10 +59,13 @@ def daydream_on():
     return db.get("daydream", "1") == "1"
 
 
-def start(vid, pack, personality, game):
-    """The user confirmed (or changed) the style: save it and let processing continue."""
+def start(vid, pack, personality, game, character=None):
+    """The user confirmed (or changed) the style: save it and let processing continue. A character, when given,
+    is used for this one video; an empty one clears it."""
     db.run("UPDATE videos SET pack=?, personality=?, game=? WHERE id=?",
            (styles.pack_id(pack), styles.personality_id(personality), (game or "").strip() or None, vid))
+    if character is not None:
+        db.run("UPDATE videos SET character=? WHERE id=?", ((character or "").strip()[:60] or None, vid))
 
 
 def amount():
@@ -313,10 +318,10 @@ def process(vid):
     _guarded(vid, run)
 
 
-def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=None):
-    if pack or personality or game:
+def _generate(vid, amt=None, persona=None, pack=None, personality=None, game=None, character=None):
+    if pack or personality or game or character is not None:
         cur = db.one("SELECT * FROM videos WHERE id=?", (vid,))
-        start(vid, pack or cur["pack"], personality or cur["personality"], game or cur["game"])
+        start(vid, pack or cur["pack"], personality or cur["personality"], game or cur["game"], character)
     v = db.one("SELECT * FROM videos WHERE id=?", (vid,))
     work = workdir(vid)
     src = work / "source.mp4"
@@ -553,9 +558,9 @@ def recaption(vid):
     _guarded(vid, run)
 
 
-def regenerate(vid, amt=None, persona=None, pack=None, personality=None, game=None):
+def regenerate(vid, amt=None, persona=None, pack=None, personality=None, game=None, character=None):
     """New commentary from the saved scan: no Gemini calls, no re-download."""
-    _guarded(vid, lambda: _generate(vid, amt, persona, pack, personality, game))
+    _guarded(vid, lambda: _generate(vid, amt, persona, pack, personality, game, character))
 
 
 def rerender(vid):

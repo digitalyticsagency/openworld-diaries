@@ -75,7 +75,7 @@ MIGRATIONS = [("videos", "cutscenes", "TEXT"), ("lines", "note", "TEXT"), ("line
               ("videos", "pack", "TEXT"), ("videos", "personality", "TEXT"), ("videos", "game", "TEXT"),
               ("videos", "suggestion", "TEXT"), ("lines", "max_duration", "REAL"), ("lines", "dropped", "INTEGER DEFAULT 0"),
               ("lines", "trigger_t", "REAL"), ("lines", "callback_t", "REAL"),
-              ("videos", "episode", "INTEGER"), ("videos", "summary", "TEXT")]
+              ("videos", "episode", "INTEGER"), ("videos", "summary", "TEXT"), ("videos", "character", "TEXT")]
 
 
 def init():
