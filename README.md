@@ -130,6 +130,13 @@ For a video that is only a mind wandering while he rides, walks or runs. Turn on
 ## Sounding like a mind
 All commentary now follows a short guide on how real inner speech sounds: think, do not report; fragments, interruptions, questions to yourself; varied shape and length; feeling first; never talk to a viewer ("we can see", "as we ride"). The inner story adds a shape and a length to every thought (a question, a plain statement, a half-finished thought, a dry joke at his own expense, a scrap of memory, an answer to the line before; from a word or two to a longer thought, never the same twice in a row), and the gaps wobble a little around your pace so it does not tick like a clock. Lines that talk to a viewer are dropped, and in the inner story "Look at that..." and "What a beautiful..." are dropped too.
 
+## Lines must match the scene
+Whatever a line says is there right now must be there. The writer is told so (locked rule 20, and each inner-story thought is also told what the scan shows at that moment: how he travels, the sky, the place), and the guard checks it in code against the scan notes within 15 seconds of the line:
+- **What he rides or drives and what is around him:** a horse, a car, a bike, a wagon, a train, a boat or an aircraft named in a line must be in the notes. Riding allows a horse and a train in the notes allows "a car of the train". Walking with no horse in view does not.
+- **The sky:** night (moon, stars), rain, snow and fog must match. Dawn, dusk and day are not judged, as they shade into each other.
+- **Memories, hopes and wishes are free** ("used to", "once", "I'd", "someday", "sleep", "could", "wish"), as are the welcome, the outro, and a moment with no scan note near it. A line with no physical detail always passes.
+A dropped line says why ("mentions a car the scene does not show"). On the 32 lines of your finished videos it flagged none that were wrong.
+
 ## Caption looks
 
 Dialogue subtitles and the inner voice each have their own style and position, chosen in Voice with a live preview on a frame of your own video.

@@ -111,10 +111,61 @@ TIME_SPAN = re.compile(r"\b(an hour ago|hours ago|hours (?:now|in|into)|been rid
 NARRATOR = re.compile(r"^\W*(we can see|you can see|as you can see|as we (?:ride|go|move|travel|walk|head)|here we (?:are|see)|and here|behold|"
                       r"now we|let's take a look|ladies and gentlemen)\b", re.I)          # talking to a viewer: nobody is listening to a mind
 STORY_NARRATOR = re.compile(r"^\W*(look at (?:that|this|those|these|the)\b|check out\b|there goes\b|what a (?:beautiful|lovely|great|nice|fine)\b)", re.I)
+# What a line says is there right now must be there. Things are grouped with their near-synonyms; a group named in the line must also
+# appear in the scene notes close to the line (or the line must be about the past).
+THINGS = {
+    "horse": r"horse|mare|stallion|steed|hooves?|saddle|reins|stirrups?|gallop|trot",
+    "car": r"cars?|trucks?|vans?|pickups?|sedans?|coupe|engine|steering|dashboard|windshield|tyres?|tires?|highway|traffic",
+    "bike": r"motorcycles?|motorbikes?|bicycles?|bikes?|handlebars",
+    "wagon": r"wagons?|carts?|stagecoach|carriage",
+    "train": r"trains?|locomotive|railcars?|boxcars?|caboose",
+    "boat": r"boats?|canoe|ferry|ship|raft|rowing",
+    "air": r"planes?|aeroplane|aircraft|helicopter|chopper|cockpit",
+}
+SKY = {
+    "rain": (r"rain|raining|rained|drizzle|downpour|storm|thunder", ("rain", "storm", "drizzle", "thunder", "wet")),
+    "snow": (r"snow|snowing|snowflakes?|blizzard|frost", ("snow", "blizzard", "frost", "ice", "winter")),
+    "fog": (r"fog|foggy|mist|misty", ("fog", "mist")),
+    "night": (r"night|moon|moonlight|stars|starlit|midnight", ("night", "dark", "moon")),
+}                                  # dawn, dusk and day shade into each other, so only night, rain, snow and fog are judged
+PAST_MARK = re.compile(r"\b(used to|once|remember|remembered|back in|back when|when i|years? ago|long ago|before|ago|never was|was a|were a|did i|"
+                       r"i'?d|i had|i was|wish i|if i|someday|one day|maybe i|would|sleep|wake|wish|hope|hoping|want|could|might|gonna|going to|"
+                       r"let me|let's|should|if)\b", re.I)           # memories, hopes and wishes may be about anything
+SCENE_WINDOW = 15.0
 LONGEST_PLAUSIBLE = 3600.0      # a video this short cannot show hours or days passing
 
 
-def content_reason(ln, text, length=None):
+def _scene_text(scenes, t):
+    """Everything the scan says within SCENE_WINDOW seconds of t, lower-cased, as one string."""
+    near = [s for s in scenes if abs(s.get("t", -999) - t) <= SCENE_WINDOW]
+    return " ".join(__import__("json").dumps(s, default=str).lower() for s in near), near
+
+
+def scene_mismatch(ln, text, scenes):
+    """The first thing the line says is here right now that the scan does not show, or None. Only the present is judged: a memory
+    ("used to", "once", "I'd") may be about anything, and a line with no scene notes near it is not judged at all."""
+    if not scenes or ln.get("opp_id") in ("intro", "outro") or set((ln.get("beat_kinds") or "").split(",")) & {"travel_memory", "recap"}:
+        return None
+    blob, near = _scene_text(scenes, float(ln.get("start", 0)))
+    if not near or PAST_MARK.search(text):
+        return None
+    low = text.lower()
+    for name, pattern in THINGS.items():
+        if re.search(rf"\b({pattern})\b", low) and not re.search(rf"\b({pattern})\b", blob):
+            if name == "car" and re.search(r"\b(train|locomotive|railcar|boxcar)\b", blob):
+                continue                  # a train car
+            if name == "horse" and re.search(r"\briding\b", blob):
+                continue                  # he is riding, so there is a mount
+            return {"horse": "a horse", "car": "a car", "bike": "a bike", "wagon": "a wagon", "train": "a train", "boat": "a boat", "air": "an aircraft"}[name]
+    sky = " ".join(str(n.get("time_weather") or "").lower() for n in near)
+    if sky.strip():
+        for name, (pattern, shown) in SKY.items():
+            if re.search(rf"\b({pattern})\b", low) and not any(w in sky for w in shown) and not re.search(rf"\b({pattern})\b", blob):
+                return {"rain": "rain", "snow": "snow", "fog": "fog", "night": "night"}[name]
+    return None
+
+
+def content_reason(ln, text, length=None, scenes=None):
     """Rules about what a line may say, beyond when and where it may be."""
     if ln.get("opp_id") not in ("intro", "outro") and GREETING.search(text):
         return "greeting or subscribe line outside the intro and outro"
@@ -125,6 +176,9 @@ def content_reason(ln, text, length=None):
         return "narrates the scene instead of thinking"
     if kinds0 & {"hook", "cliffhanger"} and CLICKBAIT.search(text):
         return "clickbait wording in a teaser"
+    mismatch = scene_mismatch(ln, text, scenes)
+    if mismatch:
+        return f"mentions {mismatch} the scene does not show"
     if ln.get("daydream") and CANON.search(text):
         return "daydream names a real character"
     kinds, emo = set((ln.get("beat_kinds") or "").split(",")), ln.get("emotion")
@@ -192,7 +246,7 @@ def enforce(lines, windows, scenes, min_gap=None, max_words=MAX_WORDS, blocks=No
             elif not callback_ok(ln, scenes):
                 reason = "refers to an event that did not happen"
             else:
-                reason = content_reason(ln, text, length)
+                reason = content_reason(ln, text, length, scenes)
             if reason:
                 dropped.append({**ln, "reason": reason})
             else:
@@ -217,8 +271,8 @@ def enforce(lines, windows, scenes, min_gap=None, max_words=MAX_WORDS, blocks=No
                 reason = "emotion not grounded in an on-screen event"
             elif not callback_ok(ln, scenes):
                 reason = "refers to an event that did not happen"
-            elif content_reason(ln, text, length):
-                reason = content_reason(ln, text, length)
+            elif content_reason(ln, text, length, scenes):
+                reason = content_reason(ln, text, length, scenes)
             else:
                 ln = {**ln, "line": text, "max_duration": round(maxd, 2)}
                 kept.append(ln)

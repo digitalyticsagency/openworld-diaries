@@ -179,7 +179,7 @@ class TimeSpanTests(unittest.TestCase):
         text = (PROMPTS / "guardrails.md").read_text()
         self.assertIn("NO INVENTED TIME", text)
         self.assertIn("an hour ago", text)
-        self.assertIn("20. OUTPUT.", text)
+        self.assertIn("21. OUTPUT.", text)
 
 
 class StateTests(unittest.TestCase):

@@ -102,6 +102,22 @@ def spots(notes, free, length, lpm):
     return sorted(out)
 
 
+def _here(n):
+    """What the scan says is true at this moment, in a few words: how he travels, the sky, the place."""
+    how = str(n.get("mount_or_vehicle") or "").strip()
+    state = str(n.get("player_state") or "").strip()
+    bits = []
+    if how and how.lower() not in ("none", "unknown"):
+        bits.append(f"{state or 'travelling'} {how}" if state in ("riding", "driving") else how)
+    elif state in ("riding", "driving", "walking", "sprinting"):
+        bits.append(state)
+    for key in ("time_weather", "location"):
+        v = str(n.get(key) or "").strip()
+        if v and v.lower() != "unknown":
+            bits.append(v)
+    return "; ".join(bits)
+
+
 def plan(notes, free, length, lpm, theme_ids=None, note=""):
     """The story's opportunities, in time order. Every one is kind 'daydream' (a quiet-travel thought), so the writer's travel-thought rule
     and the no-real-names check apply to it; its why says which thread it belongs to and what step it takes."""
@@ -118,7 +134,11 @@ def plan(notes, free, length, lpm, theme_ids=None, note=""):
                  if k == 0 else
                  f"Continue the same thread ({label.lower()}: {seed}), picking up from your previous line and moving it one small step: "
                  "a doubt, a memory, a hope, an answer to yourself. Do not repeat it.")
+        near = min(notes, key=lambda n: abs(n["t"] - t))
+        here = _here(near)
         why = (f"INNER STORY, line {k + 1} of {THREAD_LINES} in this thread. Quiet travel, his mind wandering. {start} "
+               + (f"Right now the scan shows: {here}. Do not say anything about the present that contradicts that. " if here else "")
+               +
                f"Tone: he feels {mood}" + (f" ({'; '.join(why_m)})" if why_m else "") + ". "
                + (f"A passing sight may start the thought, but do not describe it, only what it stirs: {'; '.join(facts)}. " if facts else "")
                + (f'The owner also asked for these thoughts to touch on: "{note}". Treat that as a feeling, never as a fact, and never name anyone. ' if note and k == 0 else "")
